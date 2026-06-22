@@ -1049,8 +1049,10 @@ function showSubmissionResult(defaultMessage, response) {
     return;
   }
   if (emailSummary && emailSummary.sent === false) {
+    const detail = String(emailSummary.error || '').trim();
+    const suffix = detail ? ` Detalle: ${detail}` : '';
     showToast(
-      `${defaultMessage} No se pudo enviar el resumen al correo indicado.`,
+      `${defaultMessage} No se pudo enviar el resumen al correo indicado.${suffix}`,
       'info'
     );
     return;
