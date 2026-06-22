@@ -1061,3 +1061,11 @@ function buildResponse_(success, data, message) {
     JSON.stringify({ success, data, message })
   ).setMimeType(ContentService.MimeType.JSON);
 }
+
+function autorizarMailApp() {
+  MailApp.sendEmail({
+    to: 'pasantias.pdt@gmail.com',
+    subject: 'Prueba de autorizacion MailApp',
+    body: 'Permiso de envio de correos autorizado correctamente.',
+  });
+}
