@@ -1041,6 +1041,13 @@ async function postData(action, payload) {
 
 function showSubmissionResult(defaultMessage, response) {
   const emailSummary = response?.data?.emailSummary;
+  if (!emailSummary) {
+    showToast(
+      `${defaultMessage} El servidor no confirmo el envio del resumen; revisa el despliegue de Apps Script.`,
+      'info'
+    );
+    return;
+  }
   if (emailSummary && emailSummary.sent === false) {
     showToast(
       `${defaultMessage} No se pudo enviar el resumen al correo indicado.`,
