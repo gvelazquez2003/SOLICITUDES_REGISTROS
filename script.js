@@ -264,6 +264,7 @@ function initSolicitudesForm() {
       hora: isForcedHoraSede(sede) ? FORCED_HORA_VALUE : formData.get('hora') || '',
       sede,
       responsable: formData.get('responsable') || '',
+      correoResumen: String(formData.get('correoResumen') || '').trim(),
       observaciones: String(formData.get('observaciones') || '').trim(),
       requestId: getFormRequestId(form),
       items,
@@ -281,6 +282,7 @@ function initSolicitudesForm() {
         { label: 'Hora', value: payload.hora },
         { label: 'Sede', value: payload.sede },
         { label: 'Responsable', value: payload.responsable },
+        { label: 'Correo', value: payload.correoResumen },
         ...observationFields,
       ],
       items: payload.items.map((item) => ({
@@ -299,8 +301,8 @@ function initSolicitudesForm() {
 
     try {
       toggleFormLoading(form, true);
-      await postData('createSolicitud', payload);
-      showToast('Solicitud de sede registrada correctamente.', 'success');
+      const response = await postData('createSolicitud', payload);
+      showSubmissionResult('Solicitud de sede registrada correctamente.', response);
       form.reset();
       resetSolicitudRows();
       refreshFormRequestId(form);
@@ -420,6 +422,7 @@ function initRegistrosForm() {
       hora: isForcedHoraSede(sede) ? FORCED_HORA_VALUE : formData.get('hora') || '',
       sede,
       responsableEntrega: formData.get('responsableEntrega') || '',
+      correoResumen: String(formData.get('correoResumen') || '').trim(),
       observaciones: String(formData.get('observaciones') || '').trim(),
       numeroEntrega,
       requestId: getFormRequestId(form),
@@ -438,6 +441,7 @@ function initRegistrosForm() {
         { label: 'Hora', value: payload.hora },
         { label: 'Sede', value: payload.sede },
         { label: 'Responsable entrega', value: payload.responsableEntrega },
+        { label: 'Correo', value: payload.correoResumen },
         { label: 'Número de Entrega', value: payload.numeroEntrega || '-' },
         ...observationFields,
       ],
@@ -457,8 +461,8 @@ function initRegistrosForm() {
 
     try {
       toggleFormLoading(form, true);
-      await postData('recordEntrega', payload);
-      showToast('Entregado a Sedes procesado.', 'success');
+      const response = await postData('recordEntrega', payload);
+      showSubmissionResult('Entregado a Sedes procesado.', response);
       form.reset();
       resetRegistroRows();
       refreshFormRequestId(form);
@@ -561,6 +565,7 @@ function initMermaForm() {
       hora: isForcedHoraSede(sede) ? FORCED_HORA_VALUE : formData.get('hora') || '',
       sede,
       responsable: formData.get('responsable') || '',
+      correoResumen: String(formData.get('correoResumen') || '').trim(),
       observaciones: String(formData.get('observaciones') || '').trim(),
       requestId: getFormRequestId(form),
       items,
@@ -570,10 +575,35 @@ function initMermaForm() {
       ? [{ label: 'Observaciones', value: payload.observaciones }]
       : [];
 
+    const confirmed = await requestTwoStepConfirmation({
+      title: 'Confirmar produccion',
+      agreementName: payload.responsable,
+      fields: [
+        { label: 'Fecha', value: payload.fecha },
+        { label: 'Hora', value: payload.hora },
+        { label: 'Sede', value: payload.sede },
+        { label: 'Responsable', value: payload.responsable },
+        { label: 'Correo', value: payload.correoResumen },
+        ...observationFields,
+      ],
+      items: payload.items.map((item) => ({
+        code: item.productCode,
+        description: item.productName,
+        unit: item.unit,
+        quantity: item.quantityDisplay || item.cantidadMerma,
+      })),
+      quantityLabel: 'Cantidad producida',
+    });
+
+    if (!confirmed) {
+      showToast('Envio cancelado. Puedes revisar y editar la produccion.', 'info');
+      return;
+    }
+
     try {
       toggleFormLoading(form, true);
-      await postData('recordMerma', payload);
-      showToast(`Producción registrada para ${payload.sede}.`, 'success');
+      const response = await postData('recordMerma', payload);
+      showSubmissionResult(`Produccion registrada para ${payload.sede}.`, response);
       form.reset();
       resetMermaRows();
       refreshFormRequestId(form);
@@ -1007,6 +1037,18 @@ async function postData(action, payload) {
     throw new Error(normalizeBackendErrorMessage(data.message || 'Error en la operación.'));
   }
   return data;
+}
+
+function showSubmissionResult(defaultMessage, response) {
+  const emailSummary = response?.data?.emailSummary;
+  if (emailSummary && emailSummary.sent === false) {
+    showToast(
+      `${defaultMessage} No se pudo enviar el resumen al correo indicado.`,
+      'info'
+    );
+    return;
+  }
+  showToast(`${defaultMessage} Resumen enviado al correo indicado.`, 'success');
 }
 
 function normalizeBackendErrorMessage(message) {

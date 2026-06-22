@@ -137,9 +137,10 @@ function handleAction_(action, payload) {
 }
 
 function createSolicitud_(payload) {
-  validateRequired_(payload, ['hora', 'fecha', 'sede', 'responsable']);
+  validateRequired_(payload, ['hora', 'fecha', 'sede', 'responsable', 'correoResumen']);
   const items = Array.isArray(payload.items) ? payload.items : [];
   if (!items.length) throw new Error('Debes enviar al menos un producto.');
+  const correoResumen = sanitizeEmail_(payload.correoResumen);
 
   const registroAutomatico = new Date();
   const productCatalogByCode = getProductCatalogByCode_();
@@ -170,7 +171,25 @@ function createSolicitud_(payload) {
   ]);
 
   sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
-  return { rowsInserted: rows.length };
+  const emailSummary = sendRegistrationSummaryEmail_({
+    to: correoResumen,
+    moduleName: 'Solicitudes de Sedes',
+    subjectPrefix: 'Resumen de solicitud de sede',
+    responsibleLabel: 'Responsable de solicitud',
+    responsibleName: payload.responsable,
+    date: payload.fecha,
+    time: payload.hora,
+    sede: payload.sede,
+    observations: payload.observaciones || '',
+    quantityLabel: 'Cantidad solicitada',
+    items: sanitizedItems.map((item) => ({
+      code: item.code,
+      product: item.description,
+      unit: item.unit,
+      quantity: item.quantity,
+    })),
+  });
+  return { rowsInserted: rows.length, emailSummary };
 }
 
 function sanitizeSolicitudItems_(items) {
@@ -202,11 +221,12 @@ function sanitizeSolicitudItems_(items) {
 }
 
 function recordEntrega_(payload) {
-  validateRequired_(payload, ['fecha', 'sede', 'responsableEntrega']);
+  validateRequired_(payload, ['fecha', 'sede', 'responsableEntrega', 'correoResumen']);
   const items = Array.isArray(payload.items) ? payload.items : [];
   if (!items.length) {
     throw new Error('Debes enviar al menos un producto.');
   }
+  const correoResumen = sanitizeEmail_(payload.correoResumen);
 
   const sanitizedItems = sanitizeEntregaItems_(items);
   const sheet = getMainSheet_();
@@ -239,6 +259,25 @@ function recordEntrega_(payload) {
   batchAppendRows_(sheet, rows);
   summary.appended = rows.length;
   summary.processed = rows.length;
+  summary.emailSummary = sendRegistrationSummaryEmail_({
+    to: correoResumen,
+    moduleName: 'Entregado a Sedes',
+    subjectPrefix: 'Resumen de entrega a sede',
+    responsibleLabel: 'Responsable de entrega',
+    responsibleName: payload.responsableEntrega,
+    date: payload.fecha,
+    time: payload.hora || '',
+    sede: payload.sede,
+    numeroEntrega,
+    observations: payload.observaciones || '',
+    quantityLabel: 'Cantidad entregada',
+    items: sanitizedItems.map((item) => ({
+      code: item.productCode,
+      product: item.productName,
+      unit: item.unit,
+      quantity: item.cantidadEntregada,
+    })),
+  });
 
   return summary;
 }
@@ -514,11 +553,12 @@ function appendMermaSinSolicitud_(sheet, payload, item, qty, productCatalogByCod
 }
 
 function recordMerma_(payload) {
-  validateRequired_(payload, ['fecha', 'sede']);
+  validateRequired_(payload, ['fecha', 'sede', 'responsable', 'correoResumen']);
   const items = Array.isArray(payload.items) ? payload.items : [];
   if (!items.length) {
     throw new Error('Debes enviar al menos un producto.');
   }
+  const correoResumen = sanitizeEmail_(payload.correoResumen);
 
   const sanitizedItems = sanitizeMermaItems_(items);
   const sheet = getMainSheet_();
@@ -534,6 +574,24 @@ function recordMerma_(payload) {
   batchAppendRows_(sheet, rows);
   summary.appended = rows.length;
   summary.processed = rows.length;
+  summary.emailSummary = sendRegistrationSummaryEmail_({
+    to: correoResumen,
+    moduleName: 'Produccion',
+    subjectPrefix: 'Resumen de produccion',
+    responsibleLabel: 'Responsable',
+    responsibleName: payload.responsable || '',
+    date: payload.fecha,
+    time: payload.hora || '',
+    sede: payload.sede,
+    observations: payload.observaciones || '',
+    quantityLabel: 'Cantidad producida',
+    items: sanitizedItems.map((item) => ({
+      code: item.productCode,
+      product: item.productName,
+      unit: item.unit,
+      quantity: item.cantidadMerma,
+    })),
+  });
 
   return summary;
 }
@@ -682,6 +740,141 @@ function getMesDesdeFecha_(fecha, fallbackDate) {
 
   const safeDate = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : (fallbackDate || new Date());
   return monthNames[safeDate.getMonth()] || '';
+}
+
+function sanitizeEmail_(value) {
+  const email = String(value || '').trim();
+  if (!email) {
+    throw new Error('El correo electronico es obligatorio para enviar el resumen.');
+  }
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Ingresa un correo electronico valido para recibir el resumen.');
+  }
+  return email;
+}
+
+function sendRegistrationSummaryEmail_(summary) {
+  const to = String(summary?.to || '').trim();
+  try {
+    const recipient = sanitizeEmail_(to);
+    const subjectParts = [
+      summary.subjectPrefix || 'Resumen de registro',
+      summary.sede || '',
+      summary.date || '',
+    ].filter(Boolean);
+    const subject = subjectParts.join(' - ');
+    const body = buildSummaryTextBody_(summary);
+    const htmlBody = buildSummaryHtmlBody_(summary);
+
+    MailApp.sendEmail({
+      to: recipient,
+      subject,
+      body,
+      htmlBody,
+      name: 'Formularios EL CENTRO',
+    });
+
+    return { sent: true, to: recipient };
+  } catch (error) {
+    Logger.log(`No se pudo enviar el resumen a ${to}: ${error && error.message ? error.message : error}`);
+    return {
+      sent: false,
+      to,
+      error: normalizeAppErrorMessage_(error),
+    };
+  }
+}
+
+function buildSummaryTextBody_(summary) {
+  const lines = [
+    `Resumen de ${summary.moduleName || 'registro'}`,
+    '',
+    `Fecha: ${formatEmailValue_(summary.date)}`,
+    `Hora: ${formatEmailValue_(summary.time)}`,
+    `Sede: ${formatEmailValue_(summary.sede)}`,
+    `${summary.responsibleLabel || 'Responsable'}: ${formatEmailValue_(summary.responsibleName)}`,
+  ];
+
+  if (summary.numeroEntrega) {
+    lines.push(`Numero de Entrega: ${formatEmailValue_(summary.numeroEntrega)}`);
+  }
+
+  if (summary.observations) {
+    lines.push(`Observaciones: ${formatEmailValue_(summary.observations)}`);
+  }
+
+  lines.push('', 'Productos:');
+  const items = Array.isArray(summary.items) ? summary.items : [];
+  items.forEach((item, index) => {
+    lines.push(
+      `${index + 1}. ${formatEmailValue_(item.code)} - ${formatEmailValue_(item.product)} | Unidad: ${formatEmailValue_(item.unit)} | ${summary.quantityLabel || 'Cantidad'}: ${formatEmailValue_(item.quantity)}`
+    );
+  });
+
+  lines.push('', 'Este correo fue generado automaticamente por el formulario de EL CENTRO.');
+  return lines.join('\n');
+}
+
+function buildSummaryHtmlBody_(summary) {
+  const items = Array.isArray(summary.items) ? summary.items : [];
+  const rows = items
+    .map(
+      (item) => `
+        <tr>
+          <td style="border: 1px solid #d9c8ab;">${escapeEmailHtml_(item.code)}</td>
+          <td style="border: 1px solid #d9c8ab;">${escapeEmailHtml_(item.product)}</td>
+          <td style="border: 1px solid #d9c8ab;">${escapeEmailHtml_(item.unit)}</td>
+          <td style="border: 1px solid #d9c8ab;">${escapeEmailHtml_(item.quantity)}</td>
+        </tr>`
+    )
+    .join('');
+
+  const numeroEntregaRow = summary.numeroEntrega
+    ? `<p><strong>Numero de Entrega:</strong> ${escapeEmailHtml_(summary.numeroEntrega)}</p>`
+    : '';
+  const observationsRow = summary.observations
+    ? `<p><strong>Observaciones:</strong> ${escapeEmailHtml_(summary.observations)}</p>`
+    : '';
+
+  return `
+    <div style="font-family: Arial, sans-serif; color: #111; line-height: 1.45;">
+      <h2 style="margin: 0 0 12px;">Resumen de ${escapeEmailHtml_(summary.moduleName || 'registro')}</h2>
+      <p><strong>Fecha:</strong> ${escapeEmailHtml_(summary.date)}</p>
+      <p><strong>Hora:</strong> ${escapeEmailHtml_(summary.time)}</p>
+      <p><strong>Sede:</strong> ${escapeEmailHtml_(summary.sede)}</p>
+      <p><strong>${escapeEmailHtml_(summary.responsibleLabel || 'Responsable')}:</strong> ${escapeEmailHtml_(summary.responsibleName)}</p>
+      ${numeroEntregaRow}
+      ${observationsRow}
+      <table cellpadding="8" cellspacing="0" style="border-collapse: collapse; margin-top: 16px; width: 100%; max-width: 760px;">
+        <thead>
+          <tr style="background: #f4ebdc;">
+            <th align="left" style="border: 1px solid #d9c8ab;">Codigo</th>
+            <th align="left" style="border: 1px solid #d9c8ab;">Producto</th>
+            <th align="left" style="border: 1px solid #d9c8ab;">Unidad</th>
+            <th align="left" style="border: 1px solid #d9c8ab;">${escapeEmailHtml_(summary.quantityLabel || 'Cantidad')}</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p style="margin-top: 16px; color: #5d5147;">Este correo fue generado automaticamente por el formulario de EL CENTRO.</p>
+    </div>
+  `;
+}
+
+function formatEmailValue_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, CONFIG.timeZone, 'yyyy-MM-dd HH:mm');
+  }
+  return String(value === undefined || value === null || value === '' ? '-' : value);
+}
+
+function escapeEmailHtml_(value) {
+  return formatEmailValue_(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function parseBody_(e) {
