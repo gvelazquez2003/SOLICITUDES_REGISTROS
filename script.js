@@ -1369,6 +1369,9 @@ function showSubmissionResult(defaultMessage, response) {
 
 function normalizeBackendErrorMessage(message) {
   const text = String(message || '').trim();
+  if (/acci[oó]n post no soportada|accion post no soportada/i.test(text)) {
+    return 'El Apps Script publicado no esta actualizado con el sistema de usuarios. Actualiza Code.gs en Apps Script y crea una nueva version del despliegue Web App.';
+  }
   if (/cannot edit protected|rango protegido|hoja protegida|protected range|protected sheet/i.test(text)) {
     return 'La hoja DATA o algún rango está protegido. Abre Google Sheets > Datos > Hojas y rangos protegidos y permite edición a la cuenta propietaria del Apps Script.';
   }
