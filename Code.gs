@@ -8,7 +8,7 @@ const CONFIG = {
   requestCacheTtlSeconds: 21600,
   catalogCacheTtlSeconds: 300,
   auth: {
-    version: '20260730-users-sheet-v3',
+    version: '20260730-users-sheet-v4',
     userSheetName: 'USUARIOS',
     adminUsername: 'ADMIN',
     adminPassword: 'aeiou12345',
@@ -52,6 +52,7 @@ function doGet(e) {
         version: CONFIG.auth.version,
         userSheetName: CONFIG.auth.userSheetName,
         supportsLogin: true,
+        supportsMultipleDevicesPerUser: true,
       }, 'Backend de usuarios disponible.');
     }
 
@@ -301,6 +302,7 @@ function requireAllowedUser_(token) {
 }
 
 function createSession_(user) {
+  // Cada login crea un token independiente; varios dispositivos pueden usar el mismo usuario a la vez.
   const token = Utilities.getUuid() + '-' + Utilities.getUuid();
   const session = {
     username: user.usuario,
