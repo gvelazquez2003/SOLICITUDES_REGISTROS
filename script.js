@@ -1076,7 +1076,7 @@ function setupUserManagement() {
 async function fetchUsers(showSuccessToast = false) {
   if (state.auth?.user?.role !== 'ADMIN' || !elements.usersBody) return;
 
-  elements.usersBody.innerHTML = '<tr><td colspan="5" class="muted">Cargando usuarios...</td></tr>';
+  elements.usersBody.innerHTML = '<tr><td colspan="4" class="muted">Cargando usuarios...</td></tr>';
 
   try {
     const response = await postData('listUsers', {});
@@ -1086,14 +1086,14 @@ async function fetchUsers(showSuccessToast = false) {
       showToast('Usuarios actualizados.', 'success');
     }
   } catch (error) {
-    elements.usersBody.innerHTML = `<tr><td colspan="5" class="muted">${escapeHtml(error.message || 'No se pudieron cargar los usuarios.')}</td></tr>`;
+    elements.usersBody.innerHTML = `<tr><td colspan="4" class="muted">${escapeHtml(error.message || 'No se pudieron cargar los usuarios.')}</td></tr>`;
   }
 }
 
 function renderUsers(users) {
   if (!elements.usersBody) return;
   if (!users.length) {
-    elements.usersBody.innerHTML = '<tr><td colspan="5" class="muted">No hay usuarios creados.</td></tr>';
+    elements.usersBody.innerHTML = '<tr><td colspan="4" class="muted">No hay usuarios creados.</td></tr>';
     return;
   }
 
@@ -1115,18 +1115,8 @@ function buildUserRow(user) {
         <label class="user-toggle">
           <input
             type="checkbox"
-            data-user-access-toggle="allowed"
-            ${user.allowed ? 'checked' : ''}
-            ${disabled}
-          />
-        </label>
-      </td>
-      <td>
-        <label class="user-toggle">
-          <input
-            type="checkbox"
-            data-user-access-toggle="blocked"
-            ${user.blocked ? 'checked' : ''}
+            data-user-access-toggle
+            ${user.access ? 'checked' : ''}
             ${disabled}
           />
         </label>
@@ -1137,27 +1127,22 @@ function buildUserRow(user) {
 }
 
 function getUserStatus(user) {
-  if (user.blocked) {
-    return { label: 'Bloqueado', className: 'blocked' };
+  if (user.access) {
+    return { label: 'Activo', className: 'allowed' };
   }
-  if (user.allowed) {
-    return { label: 'Permitido', className: 'allowed' };
-  }
-  return { label: 'Pendiente', className: '' };
+  return { label: 'Sin acceso', className: '' };
 }
 
 async function updateUserAccessFromRow(checkbox) {
   const row = checkbox.closest('tr');
   if (!row) return;
 
-  const allowed = row.querySelector('[data-user-access-toggle="allowed"]')?.checked || false;
-  const blocked = row.querySelector('[data-user-access-toggle="blocked"]')?.checked || false;
+  const access = row.querySelector('[data-user-access-toggle]')?.checked || false;
 
   try {
     await postData('setUserAccess', {
       username: row.dataset.username || '',
-      allowed,
-      blocked,
+      access,
     });
     showToast('Acceso de usuario actualizado.', 'success');
     fetchUsers();

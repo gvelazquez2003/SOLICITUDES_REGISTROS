@@ -693,9 +693,43 @@ table th {
 }
 
 .user-toggle input {
+  appearance: none;
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid rgba(192, 110, 50, 0.28);
+  background: linear-gradient(180deg, #f2e5d2 0%, #e6d4b8 100%);
+  padding: 2px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.user-toggle input::before {
+  content: "";
+  position: absolute;
   width: 20px;
   height: 20px;
-  accent-color: var(--pdt-brown);
+  top: 2px;
+  left: 2px;
+  border-radius: 50%;
+  background: #fffdf8;
+  box-shadow: 0 3px 8px rgba(62, 42, 22, 0.18);
+  transition: transform 0.2s;
+}
+
+.user-toggle input:checked {
+  background: linear-gradient(180deg, var(--pdt-brown-light) 0%, var(--pdt-brown) 100%);
+  border-color: var(--pdt-brown-dark);
+}
+
+.user-toggle input:checked::before {
+  transform: translateX(20px);
+}
+
+.user-toggle input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(192, 110, 50, 0.18);
 }
 
 .user-status {
@@ -714,12 +748,6 @@ table th {
   background: rgba(88, 119, 68, 0.14);
   color: var(--success);
   border-color: rgba(88, 119, 68, 0.24);
-}
-
-.user-status.blocked {
-  background: rgba(158, 85, 40, 0.16);
-  color: var(--pdt-brown-dark);
-  border-color: rgba(158, 85, 40, 0.26);
 }
 
 .alert {

@@ -8,7 +8,7 @@ const CONFIG = {
   requestCacheTtlSeconds: 21600,
   catalogCacheTtlSeconds: 300,
   auth: {
-    version: '20260730-users-sheet-v2',
+    version: '20260730-users-sheet-v3',
     userSheetName: 'USUARIOS',
     adminUsername: 'ADMIN',
     adminPassword: 'aeiou12345',
@@ -19,9 +19,8 @@ const CONFIG = {
       passwordHash: 2,
       salt: 3,
       rol: 4,
-      permitido: 5,
-      bloqueado: 6,
-      fechaCreacion: 7,
+      acceso: 5,
+      fechaCreacion: 6,
     },
   },
   columns: {
@@ -201,10 +200,7 @@ function loginUser_(payload) {
   if (!user || !verifyPassword_(password, user.passwordHash, user.salt)) {
     throw new Error('Usuario o contrasena incorrectos.');
   }
-  if (user.bloqueado) {
-    throw new Error('Este usuario esta bloqueado por el administrador.');
-  }
-  if (!user.permitido) {
+  if (!user.acceso) {
     throw new Error('Este usuario esta pendiente de aprobacion del administrador.');
   }
 
@@ -242,8 +238,7 @@ function registerUser_(payload) {
     passwordHash: hashPassword_(password, salt),
     salt,
     rol: 'USER',
-    permitido: false,
-    bloqueado: false,
+    acceso: false,
     fechaCreacion: now,
   };
 
@@ -259,7 +254,7 @@ function setUserAccess_(payload) {
   validateRequired_(payload, ['username']);
   const username = normalizeUsername_(payload.username);
   if (username === normalizeUsername_(CONFIG.auth.adminUsername)) {
-    throw new Error('El usuario ADMIN no se puede bloquear ni restringir.');
+    throw new Error('El usuario ADMIN siempre debe mantener acceso.');
   }
 
   const sheet = getUsersSheet_();
@@ -274,10 +269,9 @@ function setUserAccess_(payload) {
     throw new Error('No se encontro la fila del usuario.');
   }
 
-  sheet.getRange(rowNumber, CONFIG.auth.userColumns.permitido).setValue(Boolean(payload.allowed));
-  sheet.getRange(rowNumber, CONFIG.auth.userColumns.bloqueado).setValue(Boolean(payload.blocked));
+  sheet.getRange(rowNumber, CONFIG.auth.userColumns.acceso).setValue(Boolean(payload.access));
 
-  if (payload.blocked || !payload.allowed) {
+  if (!payload.access) {
     revokeUserSessions_(username);
   }
 
@@ -300,7 +294,7 @@ function requireAllowedUser_(token) {
   }
 
   const user = findUserByUsername_(getUsers_(), session.username);
-  if (!user || user.bloqueado || !user.permitido) {
+  if (!user || !user.acceso) {
     throw new Error('Tu acceso no esta permitido actualmente.');
   }
   return user;
@@ -376,10 +370,10 @@ function ensureUsersSheet_() {
     'PASSWORD_HASH',
     'SALT',
     'ROL',
-    'PERMITIDO',
-    'BLOQUEADO',
+    'ACCESO',
     'FECHA_CREACION',
   ];
+  migrateUsersSheetToSingleAccess_(sheet);
   const existing = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
   const needsHeader = headers.some((header, index) => String(existing[index] || '').trim() !== header);
   if (needsHeader) {
@@ -387,6 +381,35 @@ function ensureUsersSheet_() {
     sheet.setFrozenRows(1);
   }
   return sheet;
+}
+
+function migrateUsersSheetToSingleAccess_(sheet) {
+  const oldHeaders = sheet.getRange(1, 1, 1, 7).getValues()[0].map((value) =>
+    normalizeText_(value)
+  );
+  const hasOldBlockedColumn =
+    oldHeaders[4] === 'PERMITIDO' &&
+    oldHeaders[5] === 'BLOQUEADO' &&
+    oldHeaders[6] === 'FECHA_CREACION';
+
+  if (!hasOldBlockedColumn) {
+    return;
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    const oldRows = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
+    const migratedRows = oldRows.map((row) => [
+      row[0],
+      row[1],
+      row[2],
+      row[3],
+      parseSheetBoolean_(row[4]) && !parseSheetBoolean_(row[5]),
+      row[6],
+    ]);
+    sheet.getRange(2, 1, migratedRows.length, 6).setValues(migratedRows);
+    sheet.getRange(2, 7, migratedRows.length, 1).clearContent();
+  }
 }
 
 function ensureAdminUser_(sheet) {
@@ -398,8 +421,7 @@ function ensureAdminUser_(sheet) {
     passwordHash: hashPassword_(CONFIG.auth.adminPassword, salt),
     salt,
     rol: 'ADMIN',
-    permitido: true,
-    bloqueado: false,
+    acceso: true,
     fechaCreacion: new Date(),
   };
 
@@ -413,8 +435,7 @@ function ensureAdminUser_(sheet) {
     current.passwordHash !== admin.passwordHash ||
     current.salt !== admin.salt ||
     current.rol !== 'ADMIN' ||
-    current.permitido !== true ||
-    current.bloqueado !== false
+    current.acceso !== true
   ) {
     sheet.getRange(rowNumber, 1, 1, CONFIG.auth.userColumns.fechaCreacion).setValues([userToRow_(admin)]);
   }
@@ -440,8 +461,7 @@ function rowToUser_(row) {
     passwordHash: String(row[CONFIG.auth.userColumns.passwordHash - 1] || ''),
     salt: String(row[CONFIG.auth.userColumns.salt - 1] || ''),
     rol: normalizeRole_(row[CONFIG.auth.userColumns.rol - 1]),
-    permitido: parseSheetBoolean_(row[CONFIG.auth.userColumns.permitido - 1]),
-    bloqueado: parseSheetBoolean_(row[CONFIG.auth.userColumns.bloqueado - 1]),
+    acceso: parseSheetBoolean_(row[CONFIG.auth.userColumns.acceso - 1]),
     fechaCreacion: row[CONFIG.auth.userColumns.fechaCreacion - 1] || '',
   };
 }
@@ -452,8 +472,7 @@ function userToRow_(user) {
     user.passwordHash,
     user.salt,
     user.rol,
-    Boolean(user.permitido),
-    Boolean(user.bloqueado),
+    Boolean(user.acceso),
     user.fechaCreacion || new Date(),
   ];
 }
@@ -500,8 +519,7 @@ function sanitizeUserForClient_(user) {
   return {
     username: String(user.usuario || ''),
     role: String(user.rol || 'USER'),
-    allowed: Boolean(user.permitido),
-    blocked: Boolean(user.bloqueado),
+    access: Boolean(user.acceso),
     createdAt: formatEmailValue_(user.fechaCreacion || ''),
   };
 }

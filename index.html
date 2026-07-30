@@ -383,7 +383,7 @@
             <div>
               <p class="eyebrow">Administracion</p>
               <h2>Gestion de Usuarios</h2>
-              <p class="muted">Permite o bloquea el acceso de los usuarios creados.</p>
+              <p class="muted">Activa o desactiva el acceso de los usuarios creados.</p>
             </div>
             <button class="btn btn--ghost" id="refresh-users">Actualizar usuarios</button>
           </header>
@@ -395,14 +395,13 @@
                   <tr>
                     <th>Usuario</th>
                     <th>Rol</th>
-                    <th>Acceso permitido</th>
-                    <th>Bloqueado</th>
+                    <th>Acceso</th>
                     <th>Estado</th>
                   </tr>
                 </thead>
                 <tbody id="users-body">
                   <tr>
-                    <td colspan="5" class="muted">Sin datos. Actualiza la lista.</td>
+                    <td colspan="4" class="muted">Sin datos. Actualiza la lista.</td>
                   </tr>
                 </tbody>
               </table>
@@ -441,6 +440,6 @@
     <script>
       window.APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzsJttokbSkW6AP8laHa4mvwk8xy8ESCpor5E4ClSlPlEktLG0g3xneahR0XXC99r8I/exec';
     </script>
-    <script src="script.js?v=20260730-users-sheet" defer></script>
+    <script src="script.js?v=20260730-users-sheet-v3" defer></script>
   </body>
 </html>
