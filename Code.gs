@@ -10,6 +10,7 @@ const CONFIG = {
   auth: {
     adminUsername: 'ADMIN',
     adminPassword: 'aeiou12345',
+    version: '20260730-auth-v1',
     usersPropertyKey: 'auth_users_v1',
     sessionsPropertyKey: 'auth_sessions_v1',
     sessionTtlMs: 12 * 60 * 60 * 1000,
@@ -37,6 +38,13 @@ const CONFIG = {
 function doGet(e) {
   const action = String(e?.parameter?.action || '').toLowerCase();
   try {
+    if (action === 'authversion') {
+      return buildResponse_(true, {
+        version: CONFIG.auth.version,
+        supportsLogin: true,
+      }, 'Backend de usuarios disponible.');
+    }
+
     if (action === 'diagnose') {
       const report = diagnoseAccess_();
       return buildResponse_(true, { report }, 'Diagnóstico completado.');
