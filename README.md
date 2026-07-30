@@ -7,12 +7,12 @@ Implementación estática (HTML/CSS/JS) para administrar los formularios de **So
 - `index.html`: estructura y vistas del panel (menú, formularios y catálogo).
 - `styles.css`: estilos con la línea gráfica usada previamente.
 - `script.js`: lógica para navegación, catálogo, formularios y comunicación con Apps Script.
-- `GOOGLE_APPS_SCRIPT.md`: instrucciones + código del Apps Script que se despliega junto al Sheets.
+- `GOOGLE_APPS_SCRIPT.md`: instrucciones del Apps Script que se despliega junto al Sheets.
 - `vercel.json`: configuración mínima para desplegar el sitio estático en Vercel.
 
 ## Requisitos previos
 
-1. Google Sheets con las pestañas `EL CENTRO` y `PRODUCTOS` (ya configuradas con las columnas mostradas en las capturas).
+1. Google Sheets con las pestañas `EL CENTRO` y `PRODUCTOS` (ya configuradas con las columnas mostradas en las capturas). El Apps Script creara la pestaña `USUARIOS` automaticamente.
 2. Apps Script desplegado como **Web App** con acceso "Anyone" o "Anyone with the link".
 3. URL pública del Web App copiada en la constante `window.APPS_SCRIPT_URL` ubicada al final de `index.html`.
 
@@ -29,6 +29,15 @@ Implementación estática (HTML/CSS/JS) para administrar los formularios de **So
 1. Instala dependencias opcionales para servir archivos estáticos (por ejemplo `npm install -g serve`).
 2. En la raíz del proyecto, ejecuta `serve .` o usa cualquier servidor HTTP simple. Abrir `index.html` directamente con `file://` puede bloquear las peticiones `fetch` al Apps Script.
 3. Asegúrate de haber pegado la URL del Apps Script antes de probar los formularios.
+4. Verifica `TU_URL/exec?action=authVersion`; debe responder `20260730-users-sheet-v1`.
+
+## Control de acceso
+
+- El administrador inicial es `ADMIN` con contrasena `aeiou12345`.
+- Los usuarios nuevos se crean desde la pantalla inicial y quedan pendientes.
+- La pestaña `USUARIOS` no usa columna `NOMBRE`; el identificador es `USUARIO`.
+- Estructura creada por Apps Script: `USUARIO | PASSWORD_HASH | SALT | ROL | PERMITIDO | BLOQUEADO | FECHA_CREACION`.
+- Solo `ADMIN` ve la vista `Gestion de Usuarios` y puede marcar `PERMITIDO` o `BLOQUEADO`.
 
 ## Flujo de cada formulario
 

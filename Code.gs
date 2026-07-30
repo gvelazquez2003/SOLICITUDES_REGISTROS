@@ -7,6 +7,23 @@ const CONFIG = {
   duplicateLookbackRows: 600,
   requestCacheTtlSeconds: 21600,
   catalogCacheTtlSeconds: 300,
+  auth: {
+    version: '20260730-users-sheet-v1',
+    userSheetName: 'USUARIOS',
+    adminUsername: 'ADMIN',
+    adminPassword: 'aeiou12345',
+    sessionCachePrefix: 'auth-session:',
+    sessionTtlSeconds: 21600,
+    userColumns: {
+      usuario: 1,
+      passwordHash: 2,
+      salt: 3,
+      rol: 4,
+      permitido: 5,
+      bloqueado: 6,
+      fechaCreacion: 7,
+    },
+  },
   columns: {
     hora: 1,
     fecha: 2,
@@ -30,12 +47,22 @@ const CONFIG = {
 function doGet(e) {
   const action = String(e?.parameter?.action || '').toLowerCase();
   try {
+    if (action === 'authversion') {
+      ensureUsersSheet_();
+      return buildResponse_(true, {
+        version: CONFIG.auth.version,
+        userSheetName: CONFIG.auth.userSheetName,
+        supportsLogin: true,
+      }, 'Backend de usuarios disponible.');
+    }
+
     if (action === 'diagnose') {
       const report = diagnoseAccess_();
       return buildResponse_(true, { report }, 'Diagnóstico completado.');
     }
 
     if (action === 'getproducts') {
+      requireAllowedUser_(String(e?.parameter?.token || ''));
       const products = getProducts_({ bypassCache: String(e?.parameter?.force || '') === '1' });
       return buildResponse_(true, { products }, 'Catálogo sincronizado.');
     }
@@ -119,21 +146,385 @@ function rememberProcessedRequest_(action, requestId, result) {
 
 function handleAction_(action, payload) {
   switch (action) {
+    case 'login': {
+      const data = loginUser_(payload);
+      return { data, message: 'Acceso permitido.' };
+    }
+    case 'checksession': {
+      const data = checkSession_(payload);
+      return { data, message: 'Sesion valida.' };
+    }
+    case 'logout': {
+      const data = logoutUser_(payload);
+      return { data, message: 'Sesion cerrada.' };
+    }
+    case 'registeruser': {
+      const data = registerUser_(payload);
+      return { data, message: 'Usuario creado. Espera aprobacion del administrador.' };
+    }
+    case 'listusers': {
+      requireAdmin_(payload.authToken);
+      const data = listUsers_();
+      return { data, message: 'Usuarios cargados.' };
+    }
+    case 'setuseraccess': {
+      requireAdmin_(payload.authToken);
+      const data = setUserAccess_(payload);
+      return { data, message: 'Acceso actualizado.' };
+    }
     case 'createsolicitud': {
+      requireAllowedUser_(payload.authToken);
       const data = createSolicitud_(payload);
       return { data, message: 'Solicitudes de Sedes registradas.' };
     }
     case 'recordentrega': {
+      requireAllowedUser_(payload.authToken);
       const data = recordEntrega_(payload);
       return { data, message: `Entregado a Sedes procesado: ${data.processed}` };
     }
     case 'recordmerma': {
+      requireAllowedUser_(payload.authToken);
       const data = recordMerma_(payload);
       return { data, message: `Producción registrada: ${data.processed}` };
     }
     default:
       throw new Error('Acción POST no soportada.');
   }
+}
+
+function loginUser_(payload) {
+  validateRequired_(payload, ['username', 'password']);
+  const username = normalizeUsername_(payload.username);
+  const password = String(payload.password || '');
+  const user = findUserByUsername_(getUsers_(), username);
+
+  if (!user || !verifyPassword_(password, user.passwordHash, user.salt)) {
+    throw new Error('Usuario o contrasena incorrectos.');
+  }
+  if (user.bloqueado) {
+    throw new Error('Este usuario esta bloqueado por el administrador.');
+  }
+  if (!user.permitido) {
+    throw new Error('Este usuario esta pendiente de aprobacion del administrador.');
+  }
+
+  return { session: createSession_(user) };
+}
+
+function checkSession_(payload) {
+  const token = payload.token || payload.authToken;
+  const user = requireAllowedUser_(token);
+  return { session: buildSessionResponse_(token, user) };
+}
+
+function logoutUser_(payload) {
+  const token = sanitizeToken_(payload.token || payload.authToken);
+  if (token) {
+    CacheService.getScriptCache().remove(CONFIG.auth.sessionCachePrefix + token);
+  }
+  return { ok: true };
+}
+
+function registerUser_(payload) {
+  validateRequired_(payload, ['username', 'password']);
+  const username = normalizeUsername_(payload.username);
+  const password = String(payload.password || '');
+  if (password.length < 6) {
+    throw new Error('La contrasena debe tener al menos 6 caracteres.');
+  }
+
+  const users = getUsers_();
+  if (findUserByUsername_(users, username)) {
+    throw new Error('Ya existe un usuario con ese nombre de usuario.');
+  }
+
+  const salt = Utilities.getUuid();
+  const now = new Date();
+  const user = {
+    usuario: username,
+    passwordHash: hashPassword_(password, salt),
+    salt,
+    rol: 'USER',
+    permitido: false,
+    bloqueado: false,
+    fechaCreacion: now,
+  };
+
+  appendUser_(user);
+  return { user: sanitizeUserForClient_(user) };
+}
+
+function listUsers_() {
+  return { users: getUsers_().map(sanitizeUserForClient_) };
+}
+
+function setUserAccess_(payload) {
+  validateRequired_(payload, ['username']);
+  const username = normalizeUsername_(payload.username);
+  if (username === normalizeUsername_(CONFIG.auth.adminUsername)) {
+    throw new Error('El usuario ADMIN no se puede bloquear ni restringir.');
+  }
+
+  const sheet = getUsersSheet_();
+  const users = getUsers_();
+  const user = findUserByUsername_(users, username);
+  if (!user) {
+    throw new Error('Usuario no encontrado.');
+  }
+
+  const rowNumber = findUserRowNumber_(sheet, username);
+  if (!rowNumber) {
+    throw new Error('No se encontro la fila del usuario.');
+  }
+
+  sheet.getRange(rowNumber, CONFIG.auth.userColumns.permitido).setValue(Boolean(payload.allowed));
+  sheet.getRange(rowNumber, CONFIG.auth.userColumns.bloqueado).setValue(Boolean(payload.blocked));
+
+  if (payload.blocked || !payload.allowed) {
+    revokeUserSessions_(username);
+  }
+
+  const updated = findUserByUsername_(getUsers_(), username);
+  return { user: sanitizeUserForClient_(updated) };
+}
+
+function requireAdmin_(token) {
+  const user = requireAllowedUser_(token);
+  if (user.rol !== 'ADMIN') {
+    throw new Error('Solo ADMIN puede realizar esta accion.');
+  }
+  return user;
+}
+
+function requireAllowedUser_(token) {
+  const session = getValidSession_(token);
+  if (!session) {
+    throw new Error('Sesion invalida o expirada. Inicia sesion nuevamente.');
+  }
+
+  const user = findUserByUsername_(getUsers_(), session.username);
+  if (!user || user.bloqueado || !user.permitido) {
+    throw new Error('Tu acceso no esta permitido actualmente.');
+  }
+  return user;
+}
+
+function createSession_(user) {
+  const token = Utilities.getUuid() + '-' + Utilities.getUuid();
+  const session = {
+    username: user.usuario,
+    role: user.rol,
+    expiresAt: Date.now() + CONFIG.auth.sessionTtlSeconds * 1000,
+  };
+  CacheService.getScriptCache().put(
+    CONFIG.auth.sessionCachePrefix + token,
+    JSON.stringify(session),
+    CONFIG.auth.sessionTtlSeconds
+  );
+  return buildSessionResponse_(token, user, session.expiresAt);
+}
+
+function buildSessionResponse_(token, user, expiresAt) {
+  return {
+    token: sanitizeToken_(token),
+    expiresAt: expiresAt || Date.now() + CONFIG.auth.sessionTtlSeconds * 1000,
+    user: sanitizeUserForClient_(user),
+  };
+}
+
+function getValidSession_(token) {
+  const safeToken = sanitizeToken_(token);
+  if (!safeToken) return null;
+  try {
+    const raw = CacheService.getScriptCache().get(CONFIG.auth.sessionCachePrefix + safeToken);
+    if (!raw) return null;
+    const session = JSON.parse(raw);
+    if (!session || Number(session.expiresAt || 0) < Date.now()) return null;
+    return session;
+  } catch (error) {
+    return null;
+  }
+}
+
+function revokeUserSessions_(username) {
+  // CacheService no permite listar llaves; las sesiones vigentes se invalidan al revalidar contra USUARIOS.
+}
+
+function getUsers_() {
+  const sheet = getUsersSheet_();
+  ensureAdminUser_(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  return sheet
+    .getRange(2, 1, lastRow - 1, CONFIG.auth.userColumns.fechaCreacion)
+    .getValues()
+    .map(rowToUser_)
+    .filter((user) => user.usuario);
+}
+
+function getUsersSheet_() {
+  const sheet = ensureUsersSheet_();
+  return sheet;
+}
+
+function ensureUsersSheet_() {
+  const ss = getSpreadsheet_();
+  let sheet = ss.getSheetByName(CONFIG.auth.userSheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.auth.userSheetName);
+  }
+
+  const headers = [
+    'USUARIO',
+    'PASSWORD_HASH',
+    'SALT',
+    'ROL',
+    'PERMITIDO',
+    'BLOQUEADO',
+    'FECHA_CREACION',
+  ];
+  const existing = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+  const needsHeader = headers.some((header, index) => String(existing[index] || '').trim() !== header);
+  if (needsHeader) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function ensureAdminUser_(sheet) {
+  const adminUsername = normalizeUsername_(CONFIG.auth.adminUsername);
+  const rowNumber = findUserRowNumber_(sheet, adminUsername);
+  const salt = 'admin-default-salt';
+  const admin = {
+    usuario: adminUsername,
+    passwordHash: hashPassword_(CONFIG.auth.adminPassword, salt),
+    salt,
+    rol: 'ADMIN',
+    permitido: true,
+    bloqueado: false,
+    fechaCreacion: new Date(),
+  };
+
+  if (!rowNumber) {
+    appendUser_(admin, sheet);
+    return;
+  }
+
+  const current = rowToUser_(sheet.getRange(rowNumber, 1, 1, CONFIG.auth.userColumns.fechaCreacion).getValues()[0]);
+  if (
+    current.passwordHash !== admin.passwordHash ||
+    current.salt !== admin.salt ||
+    current.rol !== 'ADMIN' ||
+    current.permitido !== true ||
+    current.bloqueado !== false
+  ) {
+    sheet.getRange(rowNumber, 1, 1, CONFIG.auth.userColumns.fechaCreacion).setValues([userToRow_(admin)]);
+  }
+}
+
+function appendUser_(user, existingSheet) {
+  const sheet = existingSheet || getUsersSheet_();
+  sheet.appendRow(userToRow_(user));
+}
+
+function findUserRowNumber_(sheet, username) {
+  const normalizedUsername = normalizeUsername_(username);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  const usernames = sheet.getRange(2, CONFIG.auth.userColumns.usuario, lastRow - 1, 1).getValues();
+  const index = usernames.findIndex((row) => normalizeUsernameSafe_(row[0]) === normalizedUsername);
+  return index >= 0 ? index + 2 : 0;
+}
+
+function rowToUser_(row) {
+  return {
+    usuario: normalizeUsernameSafe_(row[CONFIG.auth.userColumns.usuario - 1]),
+    passwordHash: String(row[CONFIG.auth.userColumns.passwordHash - 1] || ''),
+    salt: String(row[CONFIG.auth.userColumns.salt - 1] || ''),
+    rol: normalizeRole_(row[CONFIG.auth.userColumns.rol - 1]),
+    permitido: parseSheetBoolean_(row[CONFIG.auth.userColumns.permitido - 1]),
+    bloqueado: parseSheetBoolean_(row[CONFIG.auth.userColumns.bloqueado - 1]),
+    fechaCreacion: row[CONFIG.auth.userColumns.fechaCreacion - 1] || '',
+  };
+}
+
+function userToRow_(user) {
+  return [
+    user.usuario,
+    user.passwordHash,
+    user.salt,
+    user.rol,
+    Boolean(user.permitido),
+    Boolean(user.bloqueado),
+    user.fechaCreacion || new Date(),
+  ];
+}
+
+function findUserByUsername_(users, username) {
+  const normalizedUsername = normalizeUsername_(username);
+  return users.find((user) => user.usuario === normalizedUsername) || null;
+}
+
+function normalizeUsername_(value) {
+  const username = String(value || '').trim().toUpperCase();
+  if (!/^[A-Z0-9._-]{3,40}$/.test(username)) {
+    throw new Error('El usuario debe tener 3 a 40 caracteres: letras, numeros, punto, guion o guion bajo.');
+  }
+  return username;
+}
+
+function normalizeUsernameSafe_(value) {
+  try {
+    return normalizeUsername_(value);
+  } catch (error) {
+    return '';
+  }
+}
+
+function normalizeRole_(value) {
+  return String(value || '').trim().toUpperCase() === 'ADMIN' ? 'ADMIN' : 'USER';
+}
+
+function parseSheetBoolean_(value) {
+  if (value === true) return true;
+  const text = String(value || '').trim().toUpperCase();
+  return ['TRUE', 'VERDADERO', 'SI', 'SÍ', '1', 'YES'].includes(text);
+}
+
+function sanitizeToken_(value) {
+  const token = String(value || '').trim();
+  if (!token || token.length > 120) return '';
+  if (!/^[a-zA-Z0-9_-]+(?:-[a-zA-Z0-9_-]+)*$/.test(token)) return '';
+  return token;
+}
+
+function sanitizeUserForClient_(user) {
+  return {
+    username: String(user.usuario || ''),
+    role: String(user.rol || 'USER'),
+    allowed: Boolean(user.permitido),
+    blocked: Boolean(user.bloqueado),
+    createdAt: formatEmailValue_(user.fechaCreacion || ''),
+  };
+}
+
+function hashPassword_(password, salt) {
+  const bytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    `${String(salt || '')}:${String(password || '')}`
+  );
+  return bytes
+    .map((byte) => {
+      const normalized = byte < 0 ? byte + 256 : byte;
+      return normalized.toString(16).padStart(2, '0');
+    })
+    .join('');
+}
+
+function verifyPassword_(password, expectedHash, salt) {
+  if (!expectedHash || !salt) return false;
+  return hashPassword_(password, salt) === String(expectedHash || '');
 }
 
 function createSolicitud_(payload) {

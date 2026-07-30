@@ -3,14 +3,32 @@
 Sigue estos pasos para conectar los formularios con el Google Sheets mostrado en las capturas:
 
 1. Abre el Google Sheets `EL CENTRO` y navega a **Extensiones → Apps Script**.
-2. Elimina cualquier código existente y pega el script que encontrarás más abajo.
+2. Elimina cualquier código existente y pega el contenido completo del archivo `Code.gs` de este proyecto.
 3. Guarda el proyecto, asígnale un nombre (por ejemplo `formularios-latata`) y presiona **Deploy → New deployment**.
 4. Selecciona **Web app**, elige *Anyone* o *Anyone with the link* para permitir que Vercel acceda, y copia la URL pública.
 5. Sustituye la constante `window.APPS_SCRIPT_URL` en `index.html` con la URL copiada.
+6. Antes de probar el login, abre `TU_URL/exec?action=authVersion`. Debe responder `20260730-users-sheet-v1`.
+
+El script crea automaticamente la pestaña `USUARIOS` si no existe. La estructura no usa columna `NOMBRE`:
+
+```text
+USUARIO | PASSWORD_HASH | SALT | ROL | PERMITIDO | BLOQUEADO | FECHA_CREACION
+```
+
+El usuario administrador inicial es:
+
+```text
+USUARIO: ADMIN
+CONTRASENA: aeiou12345
+```
+
+Los usuarios creados desde la pagina quedan con `ROL = USER`, `PERMITIDO = FALSE` y `BLOQUEADO = FALSE` hasta que ADMIN los habilite.
 
 > Si actualizas el script en el futuro, recuerda crear un nuevo deployment o actualizar el existente para que mantenga la misma URL.
 
 ## Código del Apps Script
+
+> Importante: usa el archivo `Code.gs` actual como fuente. El bloque de codigo de esta guia puede quedar desactualizado si el sistema cambia.
 
 ```javascript
 const CONFIG = {

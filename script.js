@@ -8,6 +8,7 @@ const MERMA_SEDES = ['BC', 'LPG'];
 const FORCED_HORA_SEDES = ['BC', 'PB-2', 'VM'];
 const FORCED_HORA_VALUE = '09:00';
 const STORAGE_KEY = 'latata-catalog-v1';
+const AUTH_STORAGE_KEY = 'latata-auth-session-v2';
 const DECIMAL_COMMA_PRODUCT_CODES = new Set([
   'MDMP0234',
   'STMP0014',
@@ -22,9 +23,24 @@ const DECIMAL_COMMA_PRODUCT_CODES = new Set([
 
 const state = {
   products: [],
+  auth: null,
+  authenticatedDataLoaded: false,
 };
 
 const elements = {
+  appShell: document.getElementById('app-shell'),
+  authScreen: document.getElementById('auth-screen'),
+  loginForm: document.getElementById('login-form'),
+  registerForm: document.getElementById('register-form'),
+  authStatus: document.getElementById('auth-status'),
+  authTabs: () => document.querySelectorAll('[data-auth-panel-target]'),
+  authPanels: () => document.querySelectorAll('[data-auth-panel]'),
+  adminOnly: () => document.querySelectorAll('[data-admin-only]'),
+  sessionUser: document.getElementById('session-user'),
+  sessionRole: document.getElementById('session-role'),
+  logoutBtn: document.getElementById('logout-btn'),
+  usersBody: document.getElementById('users-body'),
+  refreshUsersBtn: document.getElementById('refresh-users'),
   navButtons: () => document.querySelectorAll('.nav-btn'),
   viewTriggers: () => document.querySelectorAll('[data-view-target]'),
   views: () => document.querySelectorAll('.view'),
@@ -93,6 +109,7 @@ const queryAll = (scope, selector) => {
 init();
 
 function init() {
+  setupAuthUi();
   setupNavigation();
   populateSedeSelects();
   setupHoraAutoForSedes();
@@ -104,10 +121,171 @@ function init() {
   syncProductCombosState();
   setupSingleProductHintButtons();
   setupConfirmModalEvents();
+  setupUserManagement();
   initCatalogView();
+  toggleEnvWarning(!APPS_SCRIPT_URL);
+  bootAuth();
+}
+
+function setupAuthUi() {
+  elements.authTabs().forEach((tab) => {
+    tab.addEventListener('click', () => showAuthPanel(tab.dataset.authPanelTarget));
+  });
+
+  elements.loginForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    await runAuthAction(form, async () => {
+      const response = await postPublicData('login', {
+        username: formData.get('username') || '',
+        password: formData.get('password') || '',
+      });
+      applySession(response?.data?.session);
+      form.reset();
+      showToast('Acceso permitido.', 'success');
+    });
+  });
+
+  elements.registerForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    await runAuthAction(form, async () => {
+      await postPublicData('registerUser', {
+        username: formData.get('username') || '',
+        password: formData.get('password') || '',
+      });
+      form.reset();
+      showAuthPanel('login');
+      setAuthStatus('Usuario creado. Espera la aprobacion de ADMIN para entrar.', 'success');
+    });
+  });
+
+  elements.logoutBtn?.addEventListener('click', async () => {
+    const token = state.auth?.token;
+    clearSession();
+    showAuthPanel('login');
+    if (token) {
+      try {
+        await postPublicData('logout', { token });
+      } catch (error) {
+      }
+    }
+  });
+}
+
+async function runAuthAction(form, callback) {
+  try {
+    setAuthStatus('Procesando...', '');
+    toggleFormLoading(form, true);
+    await callback();
+  } catch (error) {
+    setAuthStatus(error.message || 'No se pudo completar la accion.', 'error');
+  } finally {
+    toggleFormLoading(form, false);
+  }
+}
+
+function showAuthPanel(target) {
+  const safeTarget = target === 'register' ? 'register' : 'login';
+  elements.authTabs().forEach((tab) => {
+    tab.classList.toggle('active', tab.dataset.authPanelTarget === safeTarget);
+  });
+  elements.authPanels().forEach((panel) => {
+    panel.classList.toggle('active', panel.dataset.authPanel === safeTarget);
+  });
+  setAuthStatus('', '');
+}
+
+async function bootAuth() {
+  const savedSession = readStoredSession();
+  if (!savedSession?.token) {
+    clearSession(false);
+    return;
+  }
+
+  try {
+    setAuthStatus('Verificando sesion...', '');
+    const response = await postPublicData('checkSession', { token: savedSession.token });
+    applySession(response?.data?.session);
+  } catch (error) {
+    clearSession();
+    setAuthStatus('Inicia sesion para continuar.', '');
+  }
+}
+
+function readStoredSession() {
+  try {
+    return JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || 'null');
+  } catch (error) {
+    return null;
+  }
+}
+
+function applySession(session) {
+  if (!session?.token || !session?.user) {
+    throw new Error('Sesion invalida.');
+  }
+
+  state.auth = session;
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+  renderSessionState();
+  loadAuthenticatedData();
+}
+
+function clearSession(removeStorage = true) {
+  state.auth = null;
+  state.authenticatedDataLoaded = false;
+  if (removeStorage) {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+  }
+  renderSessionState();
+}
+
+function renderSessionState() {
+  const isAuthenticated = Boolean(state.auth?.token);
+  const user = state.auth?.user || {};
+  const isAdmin = user.role === 'ADMIN';
+
+  elements.authScreen?.classList.toggle('hidden', isAuthenticated);
+  elements.appShell?.classList.toggle('hidden', !isAuthenticated);
+  elements.adminOnly().forEach((element) => element.classList.toggle('hidden', !isAdmin));
+
+  if (elements.sessionUser) {
+    elements.sessionUser.textContent = user.username || 'Usuario';
+  }
+  if (elements.sessionRole) {
+    elements.sessionRole.textContent = user.role || 'USER';
+  }
+
+  if (!isAdmin && document.querySelector('.view.active')?.dataset.view === 'usuarios') {
+    showView('home');
+  }
+}
+
+function loadAuthenticatedData() {
+  if (state.authenticatedDataLoaded) return;
+  state.authenticatedDataLoaded = true;
   loadCatalogFromCache();
   fetchProducts();
-  toggleEnvWarning(!APPS_SCRIPT_URL);
+  if (state.auth?.user?.role === 'ADMIN') {
+    fetchUsers();
+  }
+}
+
+function setAuthStatus(message, type) {
+  if (!elements.authStatus) return;
+  elements.authStatus.textContent = message || '';
+  elements.authStatus.className = `auth-status ${type || ''}`.trim();
+}
+
+function requireSession() {
+  if (!state.auth?.token) {
+    clearSession(false);
+    throw new Error('Inicia sesion para continuar.');
+  }
+  return state.auth.token;
 }
 
 function setupConfirmModalEvents() {
@@ -137,12 +315,19 @@ function setupNavigation() {
 
 function showView(target) {
   if (!target) return;
+  if (target === 'usuarios' && state.auth?.user?.role !== 'ADMIN') {
+    showToast('Solo ADMIN puede gestionar usuarios.', 'error');
+    return;
+  }
   elements.views().forEach((view) => {
     view.classList.toggle('active', view.dataset.view === target);
   });
   elements.navButtons().forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.viewTarget === target);
   });
+  if (target === 'usuarios') {
+    fetchUsers();
+  }
 }
 
 function populateSedeSelects() {
@@ -884,6 +1069,104 @@ function collectItems(container, quantityLabel, mapper) {
   return items;
 }
 
+function setupUserManagement() {
+  elements.refreshUsersBtn?.addEventListener('click', () => fetchUsers(true));
+}
+
+async function fetchUsers(showSuccessToast = false) {
+  if (state.auth?.user?.role !== 'ADMIN' || !elements.usersBody) return;
+
+  elements.usersBody.innerHTML = '<tr><td colspan="5" class="muted">Cargando usuarios...</td></tr>';
+
+  try {
+    const response = await postData('listUsers', {});
+    const users = Array.isArray(response?.data?.users) ? response.data.users : [];
+    renderUsers(users);
+    if (showSuccessToast) {
+      showToast('Usuarios actualizados.', 'success');
+    }
+  } catch (error) {
+    elements.usersBody.innerHTML = `<tr><td colspan="5" class="muted">${escapeHtml(error.message || 'No se pudieron cargar los usuarios.')}</td></tr>`;
+  }
+}
+
+function renderUsers(users) {
+  if (!elements.usersBody) return;
+  if (!users.length) {
+    elements.usersBody.innerHTML = '<tr><td colspan="5" class="muted">No hay usuarios creados.</td></tr>';
+    return;
+  }
+
+  elements.usersBody.innerHTML = users.map(buildUserRow).join('');
+  elements.usersBody.querySelectorAll('[data-user-access-toggle]').forEach((checkbox) => {
+    checkbox.addEventListener('change', () => updateUserAccessFromRow(checkbox));
+  });
+}
+
+function buildUserRow(user) {
+  const isAdmin = user.role === 'ADMIN';
+  const status = getUserStatus(user);
+  const disabled = isAdmin ? 'disabled' : '';
+  return `
+    <tr data-username="${escapeHtml(user.username || '')}">
+      <td>${escapeHtml(user.username || '')}</td>
+      <td>${escapeHtml(user.role || 'USER')}</td>
+      <td>
+        <label class="user-toggle">
+          <input
+            type="checkbox"
+            data-user-access-toggle="allowed"
+            ${user.allowed ? 'checked' : ''}
+            ${disabled}
+          />
+        </label>
+      </td>
+      <td>
+        <label class="user-toggle">
+          <input
+            type="checkbox"
+            data-user-access-toggle="blocked"
+            ${user.blocked ? 'checked' : ''}
+            ${disabled}
+          />
+        </label>
+      </td>
+      <td><span class="user-status ${status.className}">${status.label}</span></td>
+    </tr>
+  `;
+}
+
+function getUserStatus(user) {
+  if (user.blocked) {
+    return { label: 'Bloqueado', className: 'blocked' };
+  }
+  if (user.allowed) {
+    return { label: 'Permitido', className: 'allowed' };
+  }
+  return { label: 'Pendiente', className: '' };
+}
+
+async function updateUserAccessFromRow(checkbox) {
+  const row = checkbox.closest('tr');
+  if (!row) return;
+
+  const allowed = row.querySelector('[data-user-access-toggle="allowed"]')?.checked || false;
+  const blocked = row.querySelector('[data-user-access-toggle="blocked"]')?.checked || false;
+
+  try {
+    await postData('setUserAccess', {
+      username: row.dataset.username || '',
+      allowed,
+      blocked,
+    });
+    showToast('Acceso de usuario actualizado.', 'success');
+    fetchUsers();
+  } catch (error) {
+    showToast(error.message || 'No se pudo actualizar el usuario.', 'error');
+    fetchUsers();
+  }
+}
+
 function initCatalogView() {
   elements.catalogSearch?.addEventListener('input', (event) => {
     const term = event.target.value.trim().toLowerCase();
@@ -954,6 +1237,10 @@ function parseQuantityByProduct(value, product, quantityLabel) {
 }
 
 async function fetchProducts(showToastOnSuccess = false, forceRefresh = false) {
+  if (!state.auth?.token) {
+    setCatalogStatus('Inicia sesion para sincronizar.', true);
+    return;
+  }
   if (!APPS_SCRIPT_URL) {
     setCatalogStatus('Configura la URL del Apps Script.', true);
     return;
@@ -963,7 +1250,8 @@ async function fetchProducts(showToastOnSuccess = false, forceRefresh = false) {
 
   try {
     const forceQuery = forceRefresh ? '&force=1' : '';
-    const response = await fetch(`${APPS_SCRIPT_URL}?action=getProducts${forceQuery}`, {
+    const tokenQuery = `&token=${encodeURIComponent(requireSession())}`;
+    const response = await fetch(`${APPS_SCRIPT_URL}?action=getProducts${forceQuery}${tokenQuery}`, {
       cache: 'no-store',
     });
     const data = await readResponseData(response);
@@ -1018,6 +1306,17 @@ function findProduct(code) {
 }
 
 async function postData(action, payload) {
+  return postDataInternal(action, {
+    ...(payload || {}),
+    authToken: requireSession(),
+  });
+}
+
+async function postPublicData(action, payload) {
+  return postDataInternal(action, payload || {});
+}
+
+async function postDataInternal(action, payload) {
   if (!APPS_SCRIPT_URL) {
     throw new Error('Configura la URL del Apps Script.');
   }
@@ -1062,6 +1361,9 @@ function showSubmissionResult(defaultMessage, response) {
 
 function normalizeBackendErrorMessage(message) {
   const text = String(message || '').trim();
+  if (/acci[oó]n post no soportada|accion post no soportada|acci[oó]n get no soportada|accion get no soportada/i.test(text)) {
+    return 'El Apps Script publicado no esta actualizado con el sistema de usuarios. Despliega el Code.gs actual y verifica /exec?action=authVersion.';
+  }
   if (/cannot edit protected|rango protegido|hoja protegida|protected range|protected sheet/i.test(text)) {
     return 'La hoja DATA o algún rango está protegido. Abre Google Sheets > Datos > Hojas y rangos protegidos y permite edición a la cuenta propietaria del Apps Script.';
   }
