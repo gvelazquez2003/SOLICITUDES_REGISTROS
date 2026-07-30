@@ -8,7 +8,7 @@ const CONFIG = {
   requestCacheTtlSeconds: 21600,
   catalogCacheTtlSeconds: 300,
   auth: {
-    version: '20260730-users-sheet-v1',
+    version: '20260730-users-sheet-v2',
     userSheetName: 'USUARIOS',
     adminUsername: 'ADMIN',
     adminPassword: 'aeiou12345',
@@ -229,9 +229,6 @@ function registerUser_(payload) {
   validateRequired_(payload, ['username', 'password']);
   const username = normalizeUsername_(payload.username);
   const password = String(payload.password || '');
-  if (password.length < 6) {
-    throw new Error('La contrasena debe tener al menos 6 caracteres.');
-  }
 
   const users = getUsers_();
   if (findUserByUsername_(users, username)) {
@@ -467,9 +464,9 @@ function findUserByUsername_(users, username) {
 }
 
 function normalizeUsername_(value) {
-  const username = String(value || '').trim().toUpperCase();
-  if (!/^[A-Z0-9._-]{3,40}$/.test(username)) {
-    throw new Error('El usuario debe tener 3 a 40 caracteres: letras, numeros, punto, guion o guion bajo.');
+  const username = String(value || '').trim();
+  if (!username) {
+    throw new Error('El usuario es obligatorio.');
   }
   return username;
 }
