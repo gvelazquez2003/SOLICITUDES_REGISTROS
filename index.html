@@ -13,54 +13,7 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <section id="auth-screen" class="auth-screen">
-      <div class="auth-card">
-        <img class="auth-card__logo" src="logopandetata.png" alt="Pan de Tata" />
-        <div class="auth-card__header">
-          <p class="eyebrow">Acceso restringido</p>
-          <h1>Formularios EL CENTRO</h1>
-          <p>Ingresa con tu usuario aprobado o solicita acceso para que el administrador lo habilite.</p>
-        </div>
-
-        <div class="auth-tabs" role="tablist" aria-label="Acceso">
-          <button type="button" class="auth-tab active" data-auth-panel-target="login">Ingresar</button>
-          <button type="button" class="auth-tab" data-auth-panel-target="register">Crear usuario</button>
-        </div>
-
-        <form id="login-form" class="auth-panel active" data-auth-panel="login">
-          <label>
-            <span>Usuario</span>
-            <input type="text" name="username" autocomplete="username" required />
-          </label>
-          <label>
-            <span>Contrasena</span>
-            <input type="password" name="password" autocomplete="current-password" required />
-          </label>
-          <button type="submit" class="btn">Entrar</button>
-        </form>
-
-        <form id="register-form" class="auth-panel" data-auth-panel="register">
-          <label>
-            <span>Nombre</span>
-            <input type="text" name="name" autocomplete="name" placeholder="Nombre y apellido" required />
-          </label>
-          <label>
-            <span>Usuario</span>
-            <input type="text" name="username" autocomplete="username" placeholder="Ej: tienda.lpg" required />
-          </label>
-          <label>
-            <span>Contrasena</span>
-            <input type="password" name="password" autocomplete="new-password" minlength="6" required />
-          </label>
-          <button type="submit" class="btn btn--accent">Solicitar acceso</button>
-          <p class="auth-panel__note">El usuario quedara pendiente hasta que ADMIN lo permita.</p>
-        </form>
-
-        <p id="auth-status" class="auth-status" role="status"></p>
-      </div>
-    </section>
-
-    <div id="app-shell" class="layout hidden">
+    <div class="layout">
       <aside class="sidebar">
         <img class="brand__logo" src="logopandetata.png" alt="Pan de Tata" />
         <div class="brand">
@@ -74,13 +27,7 @@
           <button class="nav-btn" data-view-target="registros">Entregado a Sedes</button>
           <button class="nav-btn" data-view-target="mermas">Merma de Producción</button>
           <button class="nav-btn" data-view-target="catalogo">Catálogo de productos</button>
-          <button class="nav-btn hidden" data-view-target="usuarios" data-admin-only>Gestion de Usuarios</button>
         </nav>
-        <div class="session-card">
-          <span id="session-user">Usuario</span>
-          <small id="session-role">USER</small>
-          <button type="button" class="btn btn--ghost btn--small" id="logout-btn">Salir</button>
-        </div>
         <footer class="sidebar__footer">
           <small>Elaborado por el pasante de producción Gerardo Siblesz</small>
         </footer>
@@ -381,39 +328,6 @@
             </div>
           </div>
         </section>
-
-        <section class="view" data-view="usuarios">
-          <header class="view__header">
-            <div>
-              <p class="eyebrow">Administracion</p>
-              <h2>Gestion de Usuarios</h2>
-              <p class="muted">Permite o bloquea el acceso de los usuarios creados.</p>
-            </div>
-            <button class="btn btn--ghost" id="refresh-users">Actualizar usuarios</button>
-          </header>
-
-          <div class="card user-management">
-            <div class="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Usuario</th>
-                    <th>Nombre</th>
-                    <th>Rol</th>
-                    <th>Acceso permitido</th>
-                    <th>Bloqueado</th>
-                    <th>Estado</th>
-                  </tr>
-                </thead>
-                <tbody id="users-body">
-                  <tr>
-                    <td colspan="6" class="muted">Sin datos. Actualiza la lista.</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
       </main>
     </div>
 
@@ -446,6 +360,6 @@
     <script>
       window.APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzsJttokbSkW6AP8laHa4mvwk8xy8ESCpor5E4ClSlPlEktLG0g3xneahR0XXC99r8I/exec';
     </script>
-    <script src="script.js?v=20260730-auth" defer></script>
+    <script src="script.js?v=20260622-2" defer></script>
   </body>
 </html>

@@ -7,14 +7,6 @@ const CONFIG = {
   duplicateLookbackRows: 600,
   requestCacheTtlSeconds: 21600,
   catalogCacheTtlSeconds: 300,
-  auth: {
-    adminUsername: 'ADMIN',
-    adminPassword: 'aeiou12345',
-    version: '20260730-auth-v1',
-    usersPropertyKey: 'auth_users_v1',
-    sessionsPropertyKey: 'auth_sessions_v1',
-    sessionTtlMs: 12 * 60 * 60 * 1000,
-  },
   columns: {
     hora: 1,
     fecha: 2,
@@ -38,20 +30,12 @@ const CONFIG = {
 function doGet(e) {
   const action = String(e?.parameter?.action || '').toLowerCase();
   try {
-    if (action === 'authversion') {
-      return buildResponse_(true, {
-        version: CONFIG.auth.version,
-        supportsLogin: true,
-      }, 'Backend de usuarios disponible.');
-    }
-
     if (action === 'diagnose') {
       const report = diagnoseAccess_();
       return buildResponse_(true, { report }, 'Diagnóstico completado.');
     }
 
     if (action === 'getproducts') {
-      requireAllowedUser_(String(e?.parameter?.token || ''));
       const products = getProducts_({ bypassCache: String(e?.parameter?.force || '') === '1' });
       return buildResponse_(true, { products }, 'Catálogo sincronizado.');
     }
@@ -135,376 +119,21 @@ function rememberProcessedRequest_(action, requestId, result) {
 
 function handleAction_(action, payload) {
   switch (action) {
-    case 'login': {
-      const data = loginUser_(payload);
-      return { data, message: 'Acceso permitido.' };
-    }
-    case 'checksession': {
-      const data = checkSession_(payload);
-      return { data, message: 'Sesion valida.' };
-    }
-    case 'logout': {
-      const data = logoutUser_(payload);
-      return { data, message: 'Sesion cerrada.' };
-    }
-    case 'registeruser': {
-      const data = registerUser_(payload);
-      return { data, message: 'Usuario creado. Espera aprobacion del administrador.' };
-    }
-    case 'listusers': {
-      requireAdmin_(payload.authToken);
-      const data = listUsers_();
-      return { data, message: 'Usuarios cargados.' };
-    }
-    case 'setuseraccess': {
-      requireAdmin_(payload.authToken);
-      const data = setUserAccess_(payload);
-      return { data, message: 'Acceso actualizado.' };
-    }
     case 'createsolicitud': {
-      requireAllowedUser_(payload.authToken);
       const data = createSolicitud_(payload);
       return { data, message: 'Solicitudes de Sedes registradas.' };
     }
     case 'recordentrega': {
-      requireAllowedUser_(payload.authToken);
       const data = recordEntrega_(payload);
       return { data, message: `Entregado a Sedes procesado: ${data.processed}` };
     }
     case 'recordmerma': {
-      requireAllowedUser_(payload.authToken);
       const data = recordMerma_(payload);
       return { data, message: `Producción registrada: ${data.processed}` };
     }
     default:
       throw new Error('Acción POST no soportada.');
   }
-}
-
-function loginUser_(payload) {
-  validateRequired_(payload, ['username', 'password']);
-  const username = normalizeUsername_(payload.username);
-  const password = String(payload.password || '');
-  const users = getUsers_();
-  const user = findUserByUsername_(users, username);
-
-  if (!user || !verifyPassword_(password, user.passwordHash, user.salt)) {
-    throw new Error('Usuario o contrasena incorrectos.');
-  }
-  if (user.blocked) {
-    throw new Error('Este usuario esta bloqueado por el administrador.');
-  }
-  if (!user.allowed) {
-    throw new Error('Este usuario esta pendiente de aprobacion del administrador.');
-  }
-
-  return { session: createSession_(user) };
-}
-
-function checkSession_(payload) {
-  const sessionUser = requireAllowedUser_(payload.token || payload.authToken);
-  return { session: buildSessionResponse_(payload.token || payload.authToken, sessionUser) };
-}
-
-function logoutUser_(payload) {
-  const token = sanitizeToken_(payload.token || payload.authToken);
-  if (!token) return { ok: true };
-  const sessions = getSessions_();
-  delete sessions[token];
-  saveSessions_(sessions);
-  return { ok: true };
-}
-
-function registerUser_(payload) {
-  validateRequired_(payload, ['name', 'username', 'password']);
-  const username = normalizeUsername_(payload.username);
-  const password = String(payload.password || '');
-  const name = sanitizeUserText_(payload.name, 80);
-
-  if (password.length < 6) {
-    throw new Error('La contrasena debe tener al menos 6 caracteres.');
-  }
-
-  const users = getUsers_();
-  if (findUserByUsername_(users, username)) {
-    throw new Error('Ya existe un usuario con ese nombre.');
-  }
-
-  const salt = Utilities.getUuid();
-  const now = new Date().toISOString();
-  const user = {
-    id: Utilities.getUuid(),
-    username,
-    name,
-    role: 'USER',
-    salt,
-    passwordHash: hashPassword_(password, salt),
-    allowed: false,
-    blocked: false,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  users.push(user);
-  saveUsers_(users);
-  return { user: sanitizeUserForClient_(user) };
-}
-
-function listUsers_() {
-  return { users: getUsers_().map(sanitizeUserForClient_) };
-}
-
-function setUserAccess_(payload) {
-  validateRequired_(payload, ['userId']);
-  const userId = String(payload.userId || '').trim();
-  const users = getUsers_();
-  const index = users.findIndex((user) => String(user.id || '') === userId);
-  if (index < 0) {
-    throw new Error('Usuario no encontrado.');
-  }
-
-  const user = users[index];
-  if (user.role === 'ADMIN') {
-    throw new Error('El usuario ADMIN no se puede bloquear.');
-  }
-
-  user.allowed = Boolean(payload.allowed);
-  user.blocked = Boolean(payload.blocked);
-  user.updatedAt = new Date().toISOString();
-  users[index] = user;
-  saveUsers_(users);
-
-  if (user.blocked || !user.allowed) {
-    revokeSessionsForUser_(user.username);
-  }
-
-  return { user: sanitizeUserForClient_(user) };
-}
-
-function requireAdmin_(token) {
-  const user = requireAllowedUser_(token);
-  if (user.role !== 'ADMIN') {
-    throw new Error('Solo ADMIN puede realizar esta accion.');
-  }
-  return user;
-}
-
-function requireAllowedUser_(token) {
-  const session = getValidSession_(token);
-  if (!session) {
-    throw new Error('Sesion invalida o expirada. Inicia sesion nuevamente.');
-  }
-
-  const user = findUserByUsername_(getUsers_(), session.username);
-  if (!user || user.blocked || !user.allowed) {
-    throw new Error('Tu acceso no esta permitido actualmente.');
-  }
-  return user;
-}
-
-function createSession_(user) {
-  const token = Utilities.getUuid() + '-' + Utilities.getUuid();
-  const expiresAt = Date.now() + CONFIG.auth.sessionTtlMs;
-  const sessions = pruneExpiredSessions_(getSessions_());
-  sessions[token] = {
-    username: user.username,
-    role: user.role,
-    expiresAt,
-    createdAt: new Date().toISOString(),
-  };
-  saveSessions_(sessions);
-  return buildSessionResponse_(token, user, expiresAt);
-}
-
-function buildSessionResponse_(token, user, expiresAt) {
-  return {
-    token: sanitizeToken_(token),
-    expiresAt: expiresAt || getValidSession_(token)?.expiresAt || 0,
-    user: sanitizeUserForClient_(user),
-  };
-}
-
-function getValidSession_(token) {
-  const safeToken = sanitizeToken_(token);
-  if (!safeToken) return null;
-  const sessions = getSessions_();
-  const session = sessions[safeToken];
-  if (!session || Number(session.expiresAt || 0) < Date.now()) {
-    if (session) {
-      delete sessions[safeToken];
-      saveSessions_(sessions);
-    }
-    return null;
-  }
-  return session;
-}
-
-function revokeSessionsForUser_(username) {
-  const normalizedUsername = normalizeUsername_(username);
-  const sessions = getSessions_();
-  Object.keys(sessions).forEach((token) => {
-    if (normalizeUsername_(sessions[token]?.username) === normalizedUsername) {
-      delete sessions[token];
-    }
-  });
-  saveSessions_(sessions);
-}
-
-function getUsers_() {
-  const properties = PropertiesService.getScriptProperties();
-  let users = [];
-  try {
-    users = JSON.parse(properties.getProperty(CONFIG.auth.usersPropertyKey) || '[]');
-  } catch (error) {
-    users = [];
-  }
-
-  const normalizedUsers = Array.isArray(users) ? users : [];
-  return ensureAdminUser_(normalizedUsers);
-}
-
-function ensureAdminUser_(users) {
-  const adminUsername = normalizeUsername_(CONFIG.auth.adminUsername);
-  const adminIndex = users.findIndex((user) => normalizeUsername_(user.username) === adminUsername);
-  const salt = 'admin-default-salt';
-  const adminHash = hashPassword_(CONFIG.auth.adminPassword, salt);
-  const adminUser = {
-    id: 'admin',
-    username: adminUsername,
-    name: 'Administrador',
-    role: 'ADMIN',
-    salt,
-    passwordHash: adminHash,
-    allowed: true,
-    blocked: false,
-    createdAt: new Date(0).toISOString(),
-    updatedAt: new Date(0).toISOString(),
-  };
-
-  if (adminIndex < 0) {
-    users.unshift(adminUser);
-    saveUsers_(users);
-    return users;
-  }
-
-  const currentAdmin = users[adminIndex];
-  const needsUpdate =
-    currentAdmin.id !== adminUser.id ||
-    currentAdmin.username !== adminUser.username ||
-    currentAdmin.role !== adminUser.role ||
-    currentAdmin.salt !== adminUser.salt ||
-    currentAdmin.passwordHash !== adminHash ||
-    currentAdmin.allowed !== true ||
-    currentAdmin.blocked !== false;
-
-  if (needsUpdate) {
-    users[adminIndex] = {
-      ...currentAdmin,
-      ...adminUser,
-      createdAt: currentAdmin.createdAt || adminUser.createdAt,
-      updatedAt: new Date().toISOString(),
-    };
-    saveUsers_(users);
-  }
-
-  return users;
-}
-
-function saveUsers_(users) {
-  PropertiesService.getScriptProperties().setProperty(
-    CONFIG.auth.usersPropertyKey,
-    JSON.stringify(users)
-  );
-}
-
-function getSessions_() {
-  try {
-    const raw = PropertiesService.getScriptProperties().getProperty(CONFIG.auth.sessionsPropertyKey);
-    const parsed = JSON.parse(raw || '{}');
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch (error) {
-    return {};
-  }
-}
-
-function saveSessions_(sessions) {
-  PropertiesService.getScriptProperties().setProperty(
-    CONFIG.auth.sessionsPropertyKey,
-    JSON.stringify(pruneExpiredSessions_(sessions))
-  );
-}
-
-function pruneExpiredSessions_(sessions) {
-  const now = Date.now();
-  const safeSessions = sessions && typeof sessions === 'object' ? sessions : {};
-  Object.keys(safeSessions).forEach((token) => {
-    if (Number(safeSessions[token]?.expiresAt || 0) < now) {
-      delete safeSessions[token];
-    }
-  });
-  return safeSessions;
-}
-
-function findUserByUsername_(users, username) {
-  const normalizedUsername = normalizeUsername_(username);
-  return users.find((user) => normalizeUsername_(user.username) === normalizedUsername) || null;
-}
-
-function normalizeUsername_(value) {
-  const username = String(value || '').trim().toUpperCase();
-  if (!/^[A-Z0-9._-]{3,40}$/.test(username)) {
-    throw new Error('El usuario debe tener 3 a 40 caracteres: letras, numeros, punto, guion o guion bajo.');
-  }
-  return username;
-}
-
-function sanitizeUserText_(value, maxLength) {
-  const text = String(value || '').trim();
-  if (!text) {
-    throw new Error('El nombre es obligatorio.');
-  }
-  if (text.length > maxLength) {
-    throw new Error(`El nombre no puede superar ${maxLength} caracteres.`);
-  }
-  return text;
-}
-
-function sanitizeToken_(value) {
-  const token = String(value || '').trim();
-  if (!token || token.length > 120) return '';
-  if (!/^[a-zA-Z0-9_-]+(?:-[a-zA-Z0-9_-]+)*$/.test(token)) return '';
-  return token;
-}
-
-function sanitizeUserForClient_(user) {
-  return {
-    id: String(user.id || ''),
-    username: String(user.username || ''),
-    name: String(user.name || ''),
-    role: String(user.role || 'USER'),
-    allowed: Boolean(user.allowed),
-    blocked: Boolean(user.blocked),
-    createdAt: String(user.createdAt || ''),
-    updatedAt: String(user.updatedAt || ''),
-  };
-}
-
-function hashPassword_(password, salt) {
-  const bytes = Utilities.computeDigest(
-    Utilities.DigestAlgorithm.SHA_256,
-    `${String(salt || '')}:${String(password || '')}`
-  );
-  return bytes
-    .map((byte) => {
-      const normalized = byte < 0 ? byte + 256 : byte;
-      return normalized.toString(16).padStart(2, '0');
-    })
-    .join('');
-}
-
-function verifyPassword_(password, expectedHash, salt) {
-  if (!expectedHash || !salt) return false;
-  return hashPassword_(password, salt) === String(expectedHash || '');
 }
 
 function createSolicitud_(payload) {

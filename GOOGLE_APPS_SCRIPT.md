@@ -3,7 +3,7 @@
 Sigue estos pasos para conectar los formularios con el Google Sheets mostrado en las capturas:
 
 1. Abre el Google Sheets `EL CENTRO` y navega a **Extensiones → Apps Script**.
-2. Elimina cualquier código existente y pega el contenido completo del archivo `Code.gs` de este proyecto. No copies el bloque antiguo de esta guía si aparece en tu editor o visor.
+2. Elimina cualquier código existente y pega el script que encontrarás más abajo.
 3. Guarda el proyecto, asígnale un nombre (por ejemplo `formularios-latata`) y presiona **Deploy → New deployment**.
 4. Selecciona **Web app**, elige *Anyone* o *Anyone with the link* para permitir que Vercel acceda, y copia la URL pública.
 5. Sustituye la constante `window.APPS_SCRIPT_URL` en `index.html` con la URL copiada.
@@ -11,8 +11,6 @@ Sigue estos pasos para conectar los formularios con el Google Sheets mostrado en
 > Si actualizas el script en el futuro, recuerda crear un nuevo deployment o actualizar el existente para que mantenga la misma URL.
 
 ## Código del Apps Script
-
-> Fuente actualizada: usa siempre `Code.gs`. El backend debe incluir `case 'login'` y el endpoint GET `authVersion`; si no aparecen en Apps Script, estás desplegando una versión anterior.
 
 ```javascript
 const CONFIG = {
