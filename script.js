@@ -41,6 +41,7 @@ const elements = {
   logoutBtn: document.getElementById('logout-btn'),
   usersBody: document.getElementById('users-body'),
   refreshUsersBtn: document.getElementById('refresh-users'),
+  adminCreateUserForm: document.getElementById('admin-create-user-form'),
   navButtons: () => document.querySelectorAll('.nav-btn'),
   viewTriggers: () => document.querySelectorAll('[data-view-target]'),
   views: () => document.querySelectorAll('.view'),
@@ -1071,12 +1072,13 @@ function collectItems(container, quantityLabel, mapper) {
 
 function setupUserManagement() {
   elements.refreshUsersBtn?.addEventListener('click', () => fetchUsers(true));
+  elements.adminCreateUserForm?.addEventListener('submit', createUserFromAdmin);
 }
 
 async function fetchUsers(showSuccessToast = false) {
   if (state.auth?.user?.role !== 'ADMIN' || !elements.usersBody) return;
 
-  elements.usersBody.innerHTML = '<tr><td colspan="4" class="muted">Cargando usuarios...</td></tr>';
+  elements.usersBody.innerHTML = '<tr><td colspan="5" class="muted">Cargando usuarios...</td></tr>';
 
   try {
     const response = await postData('listUsers', {});
@@ -1086,20 +1088,23 @@ async function fetchUsers(showSuccessToast = false) {
       showToast('Usuarios actualizados.', 'success');
     }
   } catch (error) {
-    elements.usersBody.innerHTML = `<tr><td colspan="4" class="muted">${escapeHtml(error.message || 'No se pudieron cargar los usuarios.')}</td></tr>`;
+    elements.usersBody.innerHTML = `<tr><td colspan="5" class="muted">${escapeHtml(error.message || 'No se pudieron cargar los usuarios.')}</td></tr>`;
   }
 }
 
 function renderUsers(users) {
   if (!elements.usersBody) return;
   if (!users.length) {
-    elements.usersBody.innerHTML = '<tr><td colspan="4" class="muted">No hay usuarios creados.</td></tr>';
+    elements.usersBody.innerHTML = '<tr><td colspan="5" class="muted">No hay usuarios creados.</td></tr>';
     return;
   }
 
   elements.usersBody.innerHTML = users.map(buildUserRow).join('');
   elements.usersBody.querySelectorAll('[data-user-access-toggle]').forEach((checkbox) => {
     checkbox.addEventListener('change', () => updateUserAccessFromRow(checkbox));
+  });
+  elements.usersBody.querySelectorAll('[data-user-delete]').forEach((button) => {
+    button.addEventListener('click', () => deleteUserFromRow(button));
   });
 }
 
@@ -1122,6 +1127,13 @@ function buildUserRow(user) {
         </label>
       </td>
       <td><span class="user-status ${status.className}">${status.label}</span></td>
+      <td>
+        ${
+          isAdmin
+            ? '<span class="muted">Protegido</span>'
+            : '<button type="button" class="btn btn--ghost btn--small user-delete-btn" data-user-delete>Eliminar</button>'
+        }
+      </td>
     </tr>
   `;
 }
@@ -1149,6 +1161,59 @@ async function updateUserAccessFromRow(checkbox) {
   } catch (error) {
     showToast(error.message || 'No se pudo actualizar el usuario.', 'error');
     fetchUsers();
+  }
+}
+
+async function createUserFromAdmin(event) {
+  event.preventDefault();
+  if (!elements.adminCreateUserForm) return;
+
+  const submitButton = elements.adminCreateUserForm.querySelector('button[type="submit"]');
+  const formData = new FormData(elements.adminCreateUserForm);
+  const username = String(formData.get('username') || '').trim();
+  const password = String(formData.get('password') || '');
+  const access = formData.get('access') === 'on';
+
+  if (!username || !password) {
+    showToast('Usuario y contrasena son obligatorios.', 'error');
+    return;
+  }
+
+  submitButton.disabled = true;
+  try {
+    await postData('createUserAdmin', {
+      username,
+      password,
+      access,
+    });
+    elements.adminCreateUserForm.reset();
+    const accessInput = elements.adminCreateUserForm.querySelector('input[name="access"]');
+    if (accessInput) accessInput.checked = true;
+    showToast('Usuario creado.', 'success');
+    fetchUsers();
+  } catch (error) {
+    showToast(error.message || 'No se pudo crear el usuario.', 'error');
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
+async function deleteUserFromRow(button) {
+  const row = button.closest('tr');
+  const username = row?.dataset?.username || '';
+  if (!username) return;
+
+  const shouldDelete = window.confirm(`Eliminar el usuario "${username}"? Esta accion no se puede deshacer.`);
+  if (!shouldDelete) return;
+
+  button.disabled = true;
+  try {
+    await postData('deleteUser', { username });
+    showToast('Usuario eliminado.', 'success');
+    fetchUsers();
+  } catch (error) {
+    showToast(error.message || 'No se pudo eliminar el usuario.', 'error');
+    button.disabled = false;
   }
 }
 

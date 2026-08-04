@@ -7,7 +7,7 @@ Sigue estos pasos para conectar los formularios con el Google Sheets mostrado en
 3. Guarda el proyecto, asígnale un nombre (por ejemplo `formularios-latata`) y presiona **Deploy → New deployment**.
 4. Selecciona **Web app**, elige *Anyone* o *Anyone with the link* para permitir que Vercel acceda, y copia la URL pública.
 5. Sustituye la constante `window.APPS_SCRIPT_URL` en `index.html` con la URL copiada.
-6. Antes de probar el login, abre `TU_URL/exec?action=authVersion`. Debe responder `20260730-users-sheet-v4`.
+6. Antes de probar el login, abre `TU_URL/exec?action=authVersion`. Debe responder `20260730-users-sheet-v5`.
 
 El script crea automaticamente la pestaña `USUARIOS` si no existe. La estructura no usa columna `NOMBRE`:
 
@@ -22,7 +22,9 @@ USUARIO: ADMIN
 CONTRASENA: aeiou12345
 ```
 
-Los usuarios creados desde la pagina quedan con `ROL = USER` y `ACCESO = FALSE` hasta que ADMIN los habilite.
+Los usuarios creados desde la pantalla inicial quedan con `ROL = USER` y `ACCESO = FALSE` hasta que ADMIN los habilite.
+Desde `Gestion de Usuarios`, ADMIN tambien puede crear usuarios directamente; esos usuarios quedan con `ROL = USER` y con el valor de `ACCESO` seleccionado en el switch del formulario.
+Desde el mismo panel ADMIN puede eliminar usuarios normales. El usuario `ADMIN` no se puede eliminar.
 El campo `USUARIO` no tiene formato obligatorio: puede ser correo, nombre corto, codigo interno o cualquier texto no vacio.
 Multiples dispositivos pueden iniciar sesion con el mismo `USUARIO` al mismo tiempo; cada login recibe su propio token.
 

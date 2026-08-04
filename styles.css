@@ -682,6 +682,38 @@ table th {
   max-height: 560px;
 }
 
+.admin-user-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(180px, 1.2fr) minmax(130px, 0.7fr) auto;
+  gap: 1rem;
+  align-items: end;
+  padding-bottom: 1.25rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid rgba(217, 200, 171, 0.82);
+}
+
+.admin-user-form .btn {
+  min-height: 43px;
+}
+
+.admin-user-form__access {
+  gap: 0.55rem;
+}
+
+.admin-user-form__toggle {
+  min-height: 43px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  border: 1px solid rgba(217, 200, 171, 0.96);
+  background: rgba(255, 253, 248, 0.72);
+  color: var(--text);
+  font-weight: 700;
+}
+
 .user-management td {
   vertical-align: middle;
 }
@@ -748,6 +780,10 @@ table th {
   background: rgba(88, 119, 68, 0.14);
   color: var(--success);
   border-color: rgba(88, 119, 68, 0.24);
+}
+
+.user-delete-btn {
+  color: var(--pdt-brown-dark);
 }
 
 .alert {
@@ -1003,6 +1039,10 @@ code {
     flex-direction: column;
   }
 
+  .admin-user-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .sidebar {
     width: 100%;
     border-bottom-left-radius: 30px;
@@ -1017,6 +1057,10 @@ code {
 }
 
 @media (max-width: 640px) {
+  .admin-user-form {
+    grid-template-columns: 1fr;
+  }
+
   .product-row {
     grid-template-columns: 1fr;
   }

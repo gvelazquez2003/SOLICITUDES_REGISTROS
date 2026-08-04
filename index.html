@@ -383,12 +383,33 @@
             <div>
               <p class="eyebrow">Administracion</p>
               <h2>Gestion de Usuarios</h2>
-              <p class="muted">Activa o desactiva el acceso de los usuarios creados.</p>
+              <p class="muted">Crea usuarios, activa o desactiva su acceso y elimina los que ya no se usen.</p>
             </div>
             <button class="btn btn--ghost" id="refresh-users">Actualizar usuarios</button>
           </header>
 
           <div class="card user-management">
+            <form class="admin-user-form" id="admin-create-user-form">
+              <label>
+                <span>Usuario</span>
+                <input type="text" name="username" autocomplete="username" required />
+              </label>
+              <label>
+                <span>Contrasena</span>
+                <input type="password" name="password" autocomplete="new-password" required />
+              </label>
+              <label class="admin-user-form__access">
+                <span>Acceso</span>
+                <span class="admin-user-form__toggle">
+                  <span>Activo</span>
+                  <span class="user-toggle">
+                    <input type="checkbox" name="access" checked />
+                  </span>
+                </span>
+              </label>
+              <button class="btn btn--accent" type="submit">Crear usuario</button>
+            </form>
+
             <div class="table-wrapper">
               <table>
                 <thead>
@@ -397,11 +418,12 @@
                     <th>Rol</th>
                     <th>Acceso</th>
                     <th>Estado</th>
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody id="users-body">
                   <tr>
-                    <td colspan="4" class="muted">Sin datos. Actualiza la lista.</td>
+                    <td colspan="5" class="muted">Sin datos. Actualiza la lista.</td>
                   </tr>
                 </tbody>
               </table>
@@ -440,6 +462,6 @@
     <script>
       window.APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzsJttokbSkW6AP8laHa4mvwk8xy8ESCpor5E4ClSlPlEktLG0g3xneahR0XXC99r8I/exec';
     </script>
-    <script src="script.js?v=20260730-users-sheet-v4" defer></script>
+    <script src="script.js?v=20260730-users-sheet-v5" defer></script>
   </body>
 </html>

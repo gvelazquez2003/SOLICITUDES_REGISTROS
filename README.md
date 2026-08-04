@@ -29,7 +29,7 @@ Implementación estática (HTML/CSS/JS) para administrar los formularios de **So
 1. Instala dependencias opcionales para servir archivos estáticos (por ejemplo `npm install -g serve`).
 2. En la raíz del proyecto, ejecuta `serve .` o usa cualquier servidor HTTP simple. Abrir `index.html` directamente con `file://` puede bloquear las peticiones `fetch` al Apps Script.
 3. Asegúrate de haber pegado la URL del Apps Script antes de probar los formularios.
-4. Verifica `TU_URL/exec?action=authVersion`; debe responder `20260730-users-sheet-v4`.
+4. Verifica `TU_URL/exec?action=authVersion`; debe responder `20260730-users-sheet-v5`.
 
 ## Control de acceso
 
@@ -39,7 +39,8 @@ Implementación estática (HTML/CSS/JS) para administrar los formularios de **So
 - Multiples dispositivos pueden iniciar sesion con el mismo `USUARIO` al mismo tiempo.
 - La pestaña `USUARIOS` no usa columna `NOMBRE`; el identificador es `USUARIO`.
 - Estructura creada por Apps Script: `USUARIO | PASSWORD_HASH | SALT | ROL | ACCESO | FECHA_CREACION`.
-- Solo `ADMIN` ve la vista `Gestion de Usuarios` y puede prender/apagar `ACCESO`.
+- Solo `ADMIN` ve la vista `Gestion de Usuarios` y puede crear usuarios, eliminar usuarios y prender/apagar `ACCESO`.
+- Los usuarios creados desde `Gestion de Usuarios` quedan como `USER`; si el switch `Acceso` esta activo, pueden entrar inmediatamente.
 
 ## Flujo de cada formulario
 

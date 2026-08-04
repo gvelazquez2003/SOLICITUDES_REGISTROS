@@ -8,7 +8,7 @@ const CONFIG = {
   requestCacheTtlSeconds: 21600,
   catalogCacheTtlSeconds: 300,
   auth: {
-    version: '20260730-users-sheet-v4',
+    version: '20260730-users-sheet-v5',
     userSheetName: 'USUARIOS',
     adminUsername: 'ADMIN',
     adminPassword: 'aeiou12345',
@@ -28,10 +28,10 @@ const CONFIG = {
     fecha: 2,
     familia: 3,
     codigo: 4,
-    unidad: 5,
-    producto: 6,
-    sede: 7,
-    cantidadSolicitada: 8,
+    producto: 5,
+    cantidadSolicitada: 6,
+    unidad: 7,
+    sede: 8,
     responsableSolicitud: 9,
     cantidadEntregada: 10,
     responsableEntrega: 11,
@@ -41,6 +41,24 @@ const CONFIG = {
     numeroEntrega: 15,
     observaciones: 16,
   },
+  mainSheetColumns: [
+    { key: 'hora', header: 'HORA', aliases: ['HORA'] },
+    { key: 'fecha', header: 'FECHA', aliases: ['FECHA'] },
+    { key: 'familia', header: 'FAMILIA', aliases: ['FAMILIA'] },
+    { key: 'codigo', header: 'CODIGO', aliases: ['CODIGO'] },
+    { key: 'producto', header: 'PRODUCTO', aliases: ['PRODUCTO'] },
+    { key: 'cantidadSolicitada', header: 'CANTIDAD SOLICITADA', aliases: ['CANTIDAD SOLICITADA'] },
+    { key: 'unidad', header: 'UND', aliases: ['UND', 'UNIDAD', 'UNIDAD(UND)', 'UNIDAD (UND)'] },
+    { key: 'sede', header: 'SEDE', aliases: ['SEDE'] },
+    { key: 'responsableSolicitud', header: 'RESPONSABLE SOLICITUD', aliases: ['RESPONSABLE SOLICITUD'] },
+    { key: 'cantidadEntregada', header: 'CANTIDAD ENTREGADA', aliases: ['CANTIDAD ENTREGADA'] },
+    { key: 'responsableEntrega', header: 'RESPONSABLE ENTREGA', aliases: ['RESPONSABLE ENTREGA'] },
+    { key: 'merma', header: 'MERMA', aliases: ['MERMA'] },
+    { key: 'mes', header: 'MES', aliases: ['MES'] },
+    { key: 'timestamp', header: 'HUELLO TEMPORAL', aliases: ['HUELLO TEMPORAL', 'HUELLA TEMPORAL', 'MARCA TEMPORAL', 'TIMESTAMP'] },
+    { key: 'numeroEntrega', header: 'NUMERO DE ENTREGA', aliases: ['NUMERO DE ENTREGA'] },
+    { key: 'observaciones', header: 'OBSERVACIONES', aliases: ['OBSERVACIONES'] },
+  ],
 };
 
 function doGet(e) {
@@ -167,10 +185,20 @@ function handleAction_(action, payload) {
       const data = listUsers_();
       return { data, message: 'Usuarios cargados.' };
     }
+    case 'createuseradmin': {
+      requireAdmin_(payload.authToken);
+      const data = createUserFromAdmin_(payload);
+      return { data, message: 'Usuario creado.' };
+    }
     case 'setuseraccess': {
       requireAdmin_(payload.authToken);
       const data = setUserAccess_(payload);
       return { data, message: 'Acceso actualizado.' };
+    }
+    case 'deleteuser': {
+      requireAdmin_(payload.authToken);
+      const data = deleteUser_(payload);
+      return { data, message: 'Usuario eliminado.' };
     }
     case 'createsolicitud': {
       requireAllowedUser_(payload.authToken);
@@ -223,9 +251,22 @@ function logoutUser_(payload) {
 }
 
 function registerUser_(payload) {
+  return createUser_(payload, {
+    access: false,
+  });
+}
+
+function createUserFromAdmin_(payload) {
+  return createUser_(payload, {
+    access: payload.access !== false,
+  });
+}
+
+function createUser_(payload, options) {
   validateRequired_(payload, ['username', 'password']);
   const username = normalizeUsername_(payload.username);
   const password = String(payload.password || '');
+  const access = Boolean(options?.access);
 
   const users = getUsers_();
   if (findUserByUsername_(users, username)) {
@@ -239,7 +280,7 @@ function registerUser_(payload) {
     passwordHash: hashPassword_(password, salt),
     salt,
     rol: 'USER',
-    acceso: false,
+    acceso: access,
     fechaCreacion: now,
   };
 
@@ -278,6 +319,24 @@ function setUserAccess_(payload) {
 
   const updated = findUserByUsername_(getUsers_(), username);
   return { user: sanitizeUserForClient_(updated) };
+}
+
+function deleteUser_(payload) {
+  validateRequired_(payload, ['username']);
+  const username = normalizeUsername_(payload.username);
+  if (username === normalizeUsername_(CONFIG.auth.adminUsername)) {
+    throw new Error('El usuario ADMIN no se puede eliminar.');
+  }
+
+  const sheet = getUsersSheet_();
+  const rowNumber = findUserRowNumber_(sheet, username);
+  if (!rowNumber) {
+    throw new Error('Usuario no encontrado.');
+  }
+
+  sheet.deleteRow(rowNumber);
+  revokeUserSessions_(username);
+  return { username };
 }
 
 function requireAdmin_(token) {
@@ -564,10 +623,10 @@ function createSolicitud_(payload) {
     payload.fecha,
     getFamiliaByCode_(item.code, productCatalogByCode),
     item.code,
-    item.unit,
     item.description,
-    payload.sede,
     item.quantity,
+    item.unit,
+    payload.sede,
     payload.responsable,
     '',
     '',
@@ -704,10 +763,10 @@ function buildEntregaRow_(
     payload.fecha || '',
     getFamiliaByCode_(item.productCode, productCatalogByCode),
     item.productCode || '',
-    item.unit || '',
     item.productName || '',
-    payload.sede || '',
     '',
+    item.unit || '',
+    payload.sede || '',
     '',
     qty,
     payload.responsableEntrega || '',
@@ -759,10 +818,10 @@ function appendEntregaDirecta_(
     payload.fecha || '',
     getFamiliaByCode_(item.productCode, productCatalogByCode),
     item.productCode || '',
-    item.unit || '',
     item.productName || '',
-    payload.sede || '',
     '',
+    item.unit || '',
+    payload.sede || '',
     '',
     qty,
     payload.responsableEntrega || '',
@@ -943,10 +1002,10 @@ function appendMermaSinSolicitud_(sheet, payload, item, qty, productCatalogByCod
     payload.fecha || '',
     getFamiliaByCode_(item.productCode, productCatalogByCode),
     item.productCode || '',
-    item.unit || '',
     item.productName || '',
-    payload.sede || '',
     '',
+    item.unit || '',
+    payload.sede || '',
     'SIN SOLICITUD',
     '',
     '',
@@ -1035,10 +1094,10 @@ function buildMermaRow_(payload, item, qty, registroAutomatico, productCatalogBy
     payload.fecha || '',
     getFamiliaByCode_(item.productCode, productCatalogByCode),
     item.productCode || '',
-    item.unit || '',
     item.productName || '',
-    payload.sede || '',
     '',
+    item.unit || '',
+    payload.sede || '',
     'SIN SOLICITUD',
     '',
     '',
@@ -1362,17 +1421,66 @@ function getMainSheet_() {
 }
 
 function ensureMainSheetStructure_(sheet) {
-  const headerCell = sheet.getRange(1, CONFIG.columns.numeroEntrega);
-  const headerValue = String(headerCell.getValue() || '').trim();
-  if (!headerValue) {
-    headerCell.setValue('NUMERO DE ENTREGA');
+  const expectedColumns = CONFIG.mainSheetColumns;
+  const expectedHeaders = expectedColumns.map((column) => column.header);
+  const columnCount = expectedHeaders.length;
+  const lastColumn = Math.max(sheet.getLastColumn(), columnCount);
+  const currentHeaders = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+  const columnIndexesByKey = getMainSheetColumnIndexesByKey_(currentHeaders);
+  const recognizedColumnCount = Object.keys(columnIndexesByKey).length;
+  const needsReorder = expectedColumns.some((column, index) => {
+    return columnIndexesByKey[column.key] !== index ||
+      normalizeHeader_(currentHeaders[index]) !== normalizeHeader_(column.header);
+  });
+
+  if (needsReorder && sheet.getLastRow() > 1) {
+    if (recognizedColumnCount < 8) {
+      throw new Error(
+        'No se pudo reordenar DATA porque no se reconocieron suficientes encabezados. ' +
+        'Revisa la fila 1 del Google Sheets antes de enviar nuevos registros.'
+      );
+    }
+    const dataRange = sheet.getRange(2, 1, sheet.getLastRow() - 1, lastColumn);
+    const currentRows = dataRange.getValues();
+    const reorderedRows = currentRows.map((row) =>
+      expectedColumns.map((column) => {
+        const sourceIndex = columnIndexesByKey[column.key];
+        return sourceIndex === undefined ? '' : row[sourceIndex];
+      })
+    );
+    sheet.getRange(2, 1, reorderedRows.length, columnCount).setValues(reorderedRows);
   }
 
-  const observationsHeader = sheet.getRange(1, CONFIG.columns.observaciones);
-  const observationsValue = String(observationsHeader.getValue() || '').trim();
-  if (!observationsValue) {
-    observationsHeader.setValue('OBSERVACIONES');
-  }
+  sheet.getRange(1, 1, 1, columnCount).setValues([expectedHeaders]);
+}
+
+function getMainSheetColumnIndexesByKey_(headers) {
+  const aliasLookup = buildMainSheetHeaderAliasLookup_();
+  return headers.reduce((acc, header, index) => {
+    const key = aliasLookup[normalizeHeader_(header)];
+    if (key && acc[key] === undefined) {
+      acc[key] = index;
+    }
+    return acc;
+  }, {});
+}
+
+function buildMainSheetHeaderAliasLookup_() {
+  return CONFIG.mainSheetColumns.reduce((acc, column) => {
+    [column.header].concat(column.aliases || []).forEach((alias) => {
+      acc[normalizeHeader_(alias)] = column.key;
+    });
+    return acc;
+  }, {});
+}
+
+function normalizeHeader_(value) {
+  return String(value || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
 }
 
 function withLock_(callback) {
