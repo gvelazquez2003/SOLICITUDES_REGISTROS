@@ -1143,17 +1143,47 @@ function getProducts_(options) {
       unit: String(row[2] || '').trim() || 'UND',
       family: String(row[3] || '').trim(),
     }));
+  const uniqueProducts = uniqueProductsByCode_(products);
 
   try {
     CacheService.getScriptCache().put(
       cacheKey,
-      JSON.stringify(products),
+      JSON.stringify(uniqueProducts),
       CONFIG.catalogCacheTtlSeconds
     );
   } catch (error) {
   }
 
-  return products;
+  return uniqueProducts;
+}
+
+function uniqueProductsByCode_(products) {
+  const byCode = {};
+  (products || []).forEach((product) => {
+    const code = String(product?.code || '').trim();
+    const description = String(product?.description || '').trim();
+    if (!code || !description) return;
+
+    const key = normalizeText_(code);
+    if (!byCode[key]) {
+      byCode[key] = {
+        code,
+        description,
+        unit: String(product?.unit || '').trim() || 'UND',
+        family: String(product?.family || '').trim(),
+      };
+      return;
+    }
+
+    if (!byCode[key].family && product?.family) {
+      byCode[key].family = String(product.family || '').trim();
+    }
+    if ((!byCode[key].unit || byCode[key].unit === 'UND') && product?.unit) {
+      byCode[key].unit = String(product.unit || '').trim() || 'UND';
+    }
+  });
+
+  return Object.keys(byCode).map((key) => byCode[key]);
 }
 
 function getProductCatalogByCode_() {

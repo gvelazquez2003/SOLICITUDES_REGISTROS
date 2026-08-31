@@ -959,14 +959,48 @@ function getProductFromInput(input) {
   );
 }
 
+function uniqueProductsByCode(products) {
+  if (!Array.isArray(products)) return [];
+  const byCode = new Map();
+
+  products.forEach((product) => {
+    const code = String(product?.code || '').trim();
+    const description = String(product?.description || '').trim();
+    if (!code || !description) return;
+
+    const key = code.toUpperCase();
+    const normalized = {
+      code,
+      description,
+      unit: String(product?.unit || '').trim() || 'UND',
+      family: String(product?.family || '').trim(),
+    };
+    const current = byCode.get(key);
+
+    if (!current) {
+      byCode.set(key, normalized);
+      return;
+    }
+
+    byCode.set(key, {
+      ...current,
+      description: current.description || normalized.description,
+      unit: current.unit && current.unit !== 'UND' ? current.unit : normalized.unit,
+      family: current.family || normalized.family,
+    });
+  });
+
+  return Array.from(byCode.values());
+}
+
 function formatProductOption(product) {
   return `${product.code} · ${product.description}`;
 }
 
 function updateProductOptionsList() {
   if (!elements.productOptions) return;
-  elements.productOptions.innerHTML = state.products
-    .map((product) => `<option value="${formatProductOption(product)}"></option>`)
+  elements.productOptions.innerHTML = uniqueProductsByCode(state.products)
+    .map((product) => `<option value="${escapeHtml(formatProductOption(product))}"></option>`)
     .join('');
 }
 
@@ -1237,9 +1271,12 @@ function loadCatalogFromCache() {
     if (!cached) return;
     const parsed = JSON.parse(cached);
     if (Array.isArray(parsed)) {
-      state.products = parsed;
+      state.products = uniqueProductsByCode(parsed);
+      if (state.products.length !== parsed.length) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.products));
+      }
       refreshProductCombos();
-      renderCatalog(parsed);
+      renderCatalog(state.products);
       setCatalogStatus('Catálogo desde caché', false);
     }
   } catch (error) {
@@ -1315,7 +1352,7 @@ async function fetchProducts(showToastOnSuccess = false, forceRefresh = false) {
       );
     }
 
-    state.products = data.data.products;
+    state.products = uniqueProductsByCode(data.data.products);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.products));
     refreshProductCombos();
     renderCatalog(state.products);
@@ -1333,18 +1370,19 @@ async function fetchProducts(showToastOnSuccess = false, forceRefresh = false) {
 
 function renderCatalog(products) {
   if (!elements.catalogBody) return;
-  if (!products.length) {
+  const safeProducts = uniqueProductsByCode(products);
+  if (!safeProducts.length) {
     elements.catalogBody.innerHTML = '<tr><td colspan="3" class="muted">Sin resultados.</td></tr>';
     return;
   }
 
-  const rows = products
+  const rows = safeProducts
     .map(
       (product) => `
         <tr>
-          <td>${product.code}</td>
-          <td>${product.description}</td>
-          <td>${product.unit}</td>
+          <td>${escapeHtml(product.code)}</td>
+          <td>${escapeHtml(product.description)}</td>
+          <td>${escapeHtml(product.unit)}</td>
         </tr>`
     )
     .join('');
